@@ -192,10 +192,10 @@ export function Avatar({ nama, besar }: { nama: string; besar?: boolean }) {
 }
 
 /** Batang kemajuan (mis. honor vs batas SBML) */
-export function Batang({ nilai, maks, className, tebal }: { nilai: number; maks: number | null; className?: string; tebal?: boolean }) {
+export function Batang({ nilai, maks, className, tebal, ambang = 80 }: { nilai: number; maks: number | null | undefined; className?: string; tebal?: boolean; ambang?: number }) {
   if (!maks) return null;
   const persen = Math.min(100, (nilai / maks) * 100);
-  const warna = nilai > maks ? 'bg-rose-500' : persen > 85 ? 'bg-amber-400' : 'bg-brand-500';
+  const warna = nilai > maks ? 'bg-rose-500' : persen >= ambang ? 'bg-amber-400' : 'bg-brand-500';
   return (
     <div className={cx('overflow-hidden rounded-full bg-stone-100', tebal ? 'h-2' : 'h-1.5', className)}>
       <motion.div className={cx('h-full rounded-full', warna)} initial={{ width: 0 }} animate={{ width: `${persen}%` }} transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }} />

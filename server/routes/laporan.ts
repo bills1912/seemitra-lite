@@ -2,7 +2,8 @@
 import { Hono } from 'hono';
 import { db } from '../db.ts';
 import type { Env } from '../auth.ts';
-import { batasHonor, honorPerMitra, unduh } from './data.ts';
+import { mitraLewatSbml, sbmlBulan, unduh } from './data.ts';
+import { ambilPengaturan } from '../db.ts';
 import { buatExcel } from '../excel.ts';
 import { labelBulan } from '../util.ts';
 
@@ -56,27 +57,34 @@ laporan.get('/rekap', (c) => {
        WHERE k.dihapus IS NULL AND k.bulan_honor = ? GROUP BY k.id ORDER BY k.tanggal_mulai`,
     )
     .all(bulan);
-  return c.json({ bulan, baris: rekapBulan(bulan), kegiatan, batas: batasHonor(Number(bulan.slice(0, 4))) });
+  return c.json({ bulan, baris: rekapBulan(bulan), kegiatan, sbml: sbmlBulan(bulan), ambang: ambilPengaturan().ambang_sbml });
 });
 
 laporan.get('/rekap/ekspor', async (c) => {
   const bulan = c.req.query('bulan') ?? hariIni().slice(0, 7);
-  const batas = batasHonor(Number(bulan.slice(0, 4)));
-  const baris = rekapBulan(bulan).map((b, i) => ({
-    no: i + 1, ...b,
-    rincian: b.tugas.map((t) => `${t.kegiatan} (${t.peran}): ${t.volume} ${t.satuan} × Rp${t.tarif.toLocaleString('id-ID')}`).join('; '),
-    status: batas ? (b.total > batas ? 'Melebihi batas' : 'Aman') : '-',
-  }));
+  const batas = sbmlBulan(bulan);
+  const adaBatas = Object.keys(batas).length > 0;
+  const baris = rekapBulan(bulan).map((b, i) => {
+    const per: Record<string, number> = {};
+    for (const t of b.tugas) per[t.peran] = (per[t.peran] ?? 0) + t.honor;
+    const lewat = Object.entries(per).filter(([p, v]) => batas[p] && v > batas[p]).map(([p]) => p);
+    return {
+      no: i + 1, ...b,
+      rincian: b.tugas.map((t) => `${t.kegiatan} (${t.peran}): ${t.volume} ${t.satuan} × Rp${t.tarif.toLocaleString('id-ID')}`).join('; '),
+      per_peran: Object.entries(per).map(([p, v]) => `${p}: Rp${Math.round(v).toLocaleString('id-ID')}`).join('; '),
+      status: !adaBatas ? '-' : lewat.length ? `Melebihi SBML ${lewat.join(', ')}` : 'Aman',
+    };
+  });
   const buf = await buatExcel(
     'Rekap Honor',
     [
       { judul: 'No', kunci: 'no', lebar: 6 }, { judul: 'Nama Mitra', kunci: 'nama', lebar: 28 }, { judul: 'SOBAT ID', kunci: 'sobat_id' },
       { judul: 'Kecamatan', kunci: 'kecamatan' }, { judul: 'Rincian Kegiatan', kunci: 'rincian', lebar: 70 },
-      { judul: 'Total Honor', kunci: 'total', uang: true }, { judul: 'Bank', kunci: 'bank', lebar: 12 },
-      { judul: 'No Rekening', kunci: 'no_rekening' }, { judul: 'Status Batas', kunci: 'status', lebar: 16 },
+      { judul: 'Honor per Peran', kunci: 'per_peran', lebar: 30 }, { judul: 'Total Honor', kunci: 'total', uang: true }, { judul: 'Bank', kunci: 'bank', lebar: 12 },
+      { judul: 'No Rekening', kunci: 'no_rekening' }, { judul: 'Status SBML', kunci: 'status', lebar: 22 },
     ],
     baris,
-    `Rekap Honor Mitra — ${labelBulan(bulan)}${batas ? ` (batas Rp${batas.toLocaleString('id-ID')}/bulan)` : ''}`,
+    `Rekap Honor Mitra — ${labelBulan(bulan)}${adaBatas ? ` (SBML/bulan: ${Object.entries(batas).map(([p, v]) => `${p} Rp${v.toLocaleString('id-ID')}`).join(', ')})` : ''}`,
   );
   return unduh(c, buf, `Rekap Honor ${labelBulan(bulan)}.xlsx`);
 });
@@ -121,19 +129,15 @@ laporan.get('/beranda', (c) => {
 
   // Hal yang perlu diperhatikan
   const perhatian: { jenis: string; judul: string; detail: string; tautan: string }[] = [];
-  const batas = batasHonor(tahun);
   for (const b of [bulan, geserBulan(bulan, 1)]) {
-    const bts = batasHonor(Number(b.slice(0, 4)));
-    if (!bts) continue;
-    const lebih = [...honorPerMitra(b).entries()].filter(([, t]) => t > bts);
-    if (lebih.length) {
-      perhatian.push({
-        jenis: 'bahaya', judul: `${lebih.length} mitra melebihi batas honor ${labelBulan(b)}`,
-        detail: `Batas Rp${bts.toLocaleString('id-ID')} per bulan`, tautan: `/rekap?bulan=${b}`,
-      });
+    const lewat = mitraLewatSbml(b);
+    const jumlah = new Set(lewat.map((x) => x.mitra_id)).size;
+    if (jumlah) {
+      const peran = [...new Set(lewat.map((x) => x.peran))].join(', ');
+      perhatian.push({ jenis: 'bahaya', judul: `${jumlah} mitra melebihi SBML ${labelBulan(b)}`, detail: `Peran: ${peran}`, tautan: `/rekap?bulan=${b}&lewat=1` });
     }
   }
-  if (!batas) perhatian.push({ jenis: 'info', judul: `Batas honor (SBML) ${tahun} belum diatur`, detail: 'Atur agar aplikasi bisa memberi peringatan.', tautan: '/pengaturan?tab=batas' });
+  if (!Object.keys(sbmlBulan(bulan)).length) perhatian.push({ jenis: 'info', judul: `SBML ${tahun} belum diatur`, detail: 'Isi SBML per peran agar aplikasi bisa memberi peringatan.', tautan: '/pengaturan?tab=batas' });
   const tanpaPetugas = db
     .prepare(
       `SELECT k.id, k.nama FROM kegiatan k WHERE k.dihapus IS NULL AND k.tanggal_selesai >= ? AND k.tanggal_mulai <= date(?, '+14 day')

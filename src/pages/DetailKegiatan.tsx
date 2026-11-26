@@ -15,8 +15,9 @@ import {
 } from '../components/ui';
 import { FormKegiatan, SalinKegiatan } from './Kegiatan';
 import { LABEL_STATUS, angka, cocok, labelBulan, rentang, rupiah, statusKegiatan } from '../lib/format';
+import { lebihBuruk, persen, statusSbml, type PetaSbml, type StatusSbml } from '../lib/sbml';
 
-type Detail = { kegiatan: Kegiatan; petugas: Petugas[]; batas: number | null };
+type Detail = { kegiatan: Kegiatan; petugas: Petugas[]; sbml: PetaSbml; ambang: number };
 
 export function DetailKegiatan() {
   const id = Number(useParams().id);
@@ -32,11 +33,13 @@ export function DetailKegiatan() {
 
   if (isLoading) return <Memuat />;
   if (error || !data) return <Kosong ikon={<AlertTriangle className="size-7" />} judul="Kegiatan tidak ditemukan" aksi={<Link to="/kegiatan"><Tombol>Kembali</Tombol></Link>} />;
-  const { kegiatan: k, petugas, batas } = data;
+  const { kegiatan: k, petugas, sbml, ambang } = data;
   const st = statusKegiatan(k);
   const daftarPeran = [...new Set(petugas.map((p) => p.peran))];
   const tampil = petugas.filter((p) => (peran === 'semua' || p.peran === peran) && (!q || cocok(`${p.nama} ${p.sobat_id ?? ''} ${p.kecamatan ?? ''} ${p.desa ?? ''}`, q)));
-  const lebih = petugas.filter((p) => batas && p.total_bulan > batas).length;
+  const adaSbml = Object.keys(sbml).length > 0;
+  const lebih = new Set(petugas.filter((p) => statusSbml(p.honor_peran[p.peran] ?? 0, sbml[p.peran], ambang) === 'lewat').map((p) => p.mitra_id)).size;
+  const dekat = new Set(petugas.filter((p) => statusSbml(p.honor_peran[p.peran] ?? 0, sbml[p.peran], ambang) === 'dekat').map((p) => p.mitra_id)).size;
 
   const hapusKegiatan = async () => {
     if (!(await konfirmasi({ judul: `Hapus ${k.nama}?`, pesan: 'Kegiatan dapat dipulihkan dari halaman Kegiatan → kegiatan terhapus.', tombol: 'Hapus', bahaya: true }))) return;
@@ -73,7 +76,9 @@ export function DetailKegiatan() {
           { ikon: CalendarRange, label: 'Jadwal', isi: rentang(k.tanggal_mulai, k.tanggal_selesai), sub: <Link to={`/rekap?bulan=${k.bulan_honor}`} className="hover:text-brand-700 hover:underline">Honor dibayar {labelBulan(k.bulan_honor)}</Link> },
           { ikon: Users, label: 'Petugas', isi: <><AngkaHidup nilai={k.jumlah_petugas} />{k.target_petugas ? <span className="text-stone-400"> / {k.target_petugas}</span> : ''}</>, sub: k.target_petugas ? (k.jumlah_petugas >= k.target_petugas ? 'Target terpenuhi ✓' : `Kurang ${k.target_petugas - k.jumlah_petugas} orang`) : 'mitra' },
           { ikon: Package, label: 'Beban kerja', isi: <><AngkaHidup nilai={k.total_volume} /> <span className="text-base font-semibold text-stone-500">{k.satuan}</span></>, sub: Object.entries(k.tarif).map(([p, t]) => `${p} ${rupiah(t)}`).join(' · ') || 'tarif belum diatur' },
-          { ikon: Wallet, label: 'Total honor', isi: <AngkaHidup nilai={k.total_honor} format={rupiah} />, sub: lebih ? <span className="font-semibold text-rose-600">{lebih} mitra melebihi batas bulan ini</span> : batas ? 'semua dalam batas SBML' : 'batas SBML belum diatur' },
+          { ikon: Wallet, label: 'Total honor', isi: <AngkaHidup nilai={k.total_honor} format={rupiah} />, sub: !adaSbml ? <Link to="/pengaturan?tab=batas" className="hover:underline">SBML {k.bulan_honor.slice(0, 4)} belum diatur</Link>
+            : lebih ? <span className="font-semibold text-rose-600">{lebih} mitra melebihi SBML {labelBulan(k.bulan_honor)}</span>
+            : dekat ? <span className="font-semibold text-amber-600">{dekat} mitra mendekati SBML</span> : 'semua petugas dalam batas SBML' },
         ].map((c, i) => (
           <Kartu key={c.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="p-4">
             <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-stone-500"><c.ikon className="size-4 text-brand-600" />{c.label}</div>
@@ -104,12 +109,12 @@ export function DetailKegiatan() {
               <thead>
                 <tr className="bg-stone-50/70 text-left text-xs font-bold uppercase tracking-wide text-stone-400">
                   <th className="px-4 py-3">Mitra</th><th className="px-2 py-3">Peran</th><th className="px-2 py-3">Volume ({k.satuan})</th><th className="px-2 py-3">Tarif</th>
-                  <th className="px-2 py-3 text-right">Honor</th><th className="px-4 py-3">Total honor {labelBulan(k.bulan_honor)}</th><th />
+                  <th className="px-2 py-3 text-right">Honor</th><th className="px-4 py-3" title="Honor mitra untuk peran ini dari semua kegiatan di bulan yang sama, dibanding SBML peran tsb">Honor peran · {labelBulan(k.bulan_honor)} vs SBML</th><th />
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
                 <AnimatePresence initial={false}>
-                  {tampil.map((p) => <BarisPetugas key={p.id} p={p} batas={batas} hapus={() => hapusPetugas(p)} />)}
+                  {tampil.map((p) => <BarisPetugas key={p.id} p={p} sbml={sbml} ambang={ambang} bulan={k.bulan_honor} hapus={() => hapusPetugas(p)} />)}
                 </AnimatePresence>
               </tbody>
               <tfoot>
@@ -134,11 +139,44 @@ export function DetailKegiatan() {
 }
 
 /* ---------------------------- Satu baris petugas dengan isian langsung ---------------------------- */
-function BarisPetugas({ p, batas, hapus }: { p: Petugas; batas: number | null; hapus: () => void }) {
+function BarisPetugas({ p, sbml, ambang, bulan, hapus }: { p: Petugas; sbml: PetaSbml; ambang: number; bulan: string; hapus: () => void }) {
   const { data: atur } = usePengaturan();
+  const { konfirmasi } = useUmpan();
   const [tersimpan, setTersimpan] = useState(false);
   const simpan = useAksi((v: Partial<Petugas>) => api.put(`/petugas/${p.id}`, v), { setelah: () => { setTersimpan(true); setTimeout(() => setTersimpan(false), 1400); } });
-  const lebih = !!batas && p.total_bulan > batas;
+  const honorPeran = p.honor_peran[p.peran] ?? 0;
+  const batas = sbml[p.peran];
+  const status = statusSbml(honorPeran, batas, ambang);
+
+  /** Sebelum menyimpan volume/tarif/peran: bila honor peran mitra di bulan ini jadi melebihi SBML, tampilkan peringatan. */
+  const ubah = async (v: Partial<Petugas>) => {
+    const peranBaru = v.peran ?? p.peran;
+    const honorBaru = (v.volume ?? p.volume) * (v.tarif ?? p.tarif);
+    const batasBaru = sbml[peranBaru];
+    const sekarang = p.honor_peran[peranBaru] ?? 0;
+    const nanti = sekarang - (peranBaru === p.peran ? p.honor : 0) + honorBaru;
+    if (batasBaru && nanti > batasBaru && nanti > (peranBaru === p.peran ? sekarang : 0)) {
+      const ok = await konfirmasi({
+        judul: `${p.nama} melebihi SBML ${peranBaru}`,
+        pesan: (
+          <div className="space-y-2">
+            <p>Dengan perubahan ini, honor <b>{peranBaru}</b> mitra ini di <b>{labelBulan(bulan)}</b> menjadi:</p>
+            <div className="rounded-xl bg-rose-50 p-3 text-rose-800">
+              <div className="flex justify-between"><span>Honor {peranBaru}</span><b className="angka">{rupiah(nanti)}</b></div>
+              <div className="flex justify-between"><span>SBML {peranBaru}</span><span className="angka">{rupiah(batasBaru)}</span></div>
+              <div className="flex justify-between border-t border-rose-200 pt-1 font-semibold"><span>Kelebihan</span><span className="angka">{rupiah(nanti - batasBaru)} ({persen(nanti, batasBaru)}%)</span></div>
+            </div>
+            <p>Tetap simpan perubahan?</p>
+          </div>
+        ),
+        tombol: 'Tetap simpan',
+        bahaya: true,
+      });
+      if (!ok) return;
+    }
+    simpan.mutate(v);
+  };
+
   return (
     <motion.tr layout initial={{ opacity: 0, backgroundColor: '#ecfdf5' }} animate={{ opacity: 1, backgroundColor: 'rgba(255,255,255,0)' }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.4 }} className="group">
       <td className="px-4 py-2.5">
@@ -151,10 +189,10 @@ function BarisPetugas({ p, batas, hapus }: { p: Petugas; batas: number | null; h
         </div>
       </td>
       <td className="px-2 py-2.5">
-        <Pilihan kecil nilai={p.peran} ubah={(v) => v !== p.peran && simpan.mutate({ peran: v })} opsi={[...new Set([...(atur?.daftar_peran ?? []), p.peran])]} className="w-fit" />
+        <Pilihan kecil nilai={p.peran} ubah={(v) => v !== p.peran && ubah({ peran: v })} opsi={[...new Set([...(atur?.daftar_peran ?? []), p.peran])]} className="w-fit" />
       </td>
-      <td className="px-2 py-2.5"><SelLangsung nilai={p.volume} simpan={(v) => simpan.mutate({ volume: v })} /></td>
-      <td className="px-2 py-2.5"><SelLangsung nilai={p.tarif} uang simpan={(v) => simpan.mutate({ tarif: v })} /></td>
+      <td className="px-2 py-2.5"><SelLangsung nilai={p.volume} simpan={(v) => ubah({ volume: v })} /></td>
+      <td className="px-2 py-2.5"><SelLangsung nilai={p.tarif} uang simpan={(v) => ubah({ tarif: v })} /></td>
       <td className="px-2 py-2.5 text-right">
         <span className="inline-flex items-center gap-1.5">
           <AnimatePresence>{tersimpan && <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className="grid size-4 place-items-center rounded-full bg-emerald-500 text-white"><Check className="size-3" strokeWidth={3} /></motion.span>}</AnimatePresence>
@@ -162,11 +200,12 @@ function BarisPetugas({ p, batas, hapus }: { p: Petugas; batas: number | null; h
         </span>
       </td>
       <td className="px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className={cx('angka text-xs font-semibold', lebih ? 'text-rose-600' : 'text-stone-500')}>{rupiah(p.total_bulan)}</span>
-          {lebih && <span title="Melebihi batas honor bulanan"><AlertTriangle className="size-3.5 text-rose-500" /></span>}
+        <div className="flex items-center gap-1.5">
+          <span className={cx('angka text-xs font-semibold', status === 'lewat' ? 'text-rose-600' : status === 'dekat' ? 'text-amber-600' : 'text-stone-500')}>{rupiah(honorPeran)}</span>
+          {batas ? <span className="angka text-xs text-stone-300">/ {rupiah(batas)}</span> : <span className="text-xs text-stone-300">· SBML {p.peran} belum diatur</span>}
+          {status === 'lewat' && <span title="Melebihi SBML"><AlertTriangle className="size-3.5 text-rose-500" /></span>}
         </div>
-        <Batang nilai={p.total_bulan} maks={batas} className="mt-1 w-32" />
+        <Batang nilai={honorPeran} maks={batas} ambang={ambang} className="mt-1 w-40" />
       </td>
       <td className="pr-3"><TombolIkon label="Keluarkan dari kegiatan" onClick={hapus} className="opacity-0 transition group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="size-4" /></TombolIkon></td>
     </motion.tr>
@@ -200,42 +239,104 @@ function SelLangsung({ nilai, simpan, uang }: { nilai: number; simpan: (v: numbe
 /* ---------------------------- Pemilih petugas ---------------------------- */
 function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () => void; kegiatan: Kegiatan }) {
   const { data: atur } = usePengaturan();
-  const { data } = useQuery({ queryKey: ['kandidat', k.id], queryFn: () => api.get<{ mitra: Kandidat[]; batas: number | null }>(`/kegiatan/${k.id}/kandidat`), enabled: buka });
+  const { konfirmasi } = useUmpan();
+  const { data } = useQuery({ queryKey: ['kandidat', k.id], queryFn: () => api.get<{ mitra: Kandidat[]; sbml: PetaSbml; ambang: number }>(`/kegiatan/${k.id}/kandidat`), enabled: buka });
   const peranAda = Object.keys(k.tarif);
   const [peran, setPeran] = useState('');
   const [volume, setVolume] = useState(0);
   const [tarif, setTarif] = useState(0);
   const [dipilih, setDipilih] = useState<Set<number>>(new Set());
+  // status SBML yang sudah disetujui pengguna saat memilih (agar tidak ditanya dua kali)
+  const [disetujui, setDisetujui] = useState<Map<number, StatusSbml>>(new Map());
   const [q, setQ] = useState('');
   const [sembunyi, setSembunyi] = useState(true);
   useEffect(() => {
     if (buka) {
       const p = peranAda[0] ?? atur?.daftar_peran[0] ?? 'PPL';
-      setPeran(p); setTarif(k.tarif[p] ?? 0); setVolume(0); setDipilih(new Set()); setQ('');
+      setPeran(p); setTarif(k.tarif[p] ?? 0); setVolume(0); setDipilih(new Set()); setDisetujui(new Map()); setQ('');
     }
   }, [buka]); // eslint-disable-line
-  const gantiPeran = (p: string) => { setPeran(p); setTarif(k.tarif[p] ?? 0); };
+  const gantiPeran = (p: string) => { setPeran(p); setTarif(k.tarif[p] ?? 0); setDisetujui(new Map()); };
 
-  const batas = data?.batas ?? null;
+  const ambang = data?.ambang ?? 80;
+  const batas = data?.sbml[peran];
   const honorBaru = volume * tarif;
+  const sekarang = (m: Kandidat) => m.honor_peran[peran] ?? 0;
+  const nanti = (m: Kandidat) => sekarang(m) + honorBaru;
+  const status = (m: Kandidat) => statusSbml(nanti(m), batas, ambang);
+
   const daftar = useMemo(() => (data?.mitra ?? []).filter((m) =>
     (!sembunyi || !(m.peran_di_sini ?? '').split(',').includes(peran)) &&
     (!q || cocok(`${m.nama} ${m.sobat_id ?? ''} ${m.kecamatan ?? ''} ${m.desa ?? ''}`, q))), [data, q, sembunyi, peran]);
+
+  /** Popup peringatan dini: honor mitra mendekati / melebihi SBML peran ini di bulan kegiatan */
+  const peringatan = async (calon: Kandidat[]) => {
+    const lewat = calon.some((m) => status(m) === 'lewat');
+    return konfirmasi({
+      judul: lewat ? `Honor ${peran} melebihi SBML` : `Honor ${peran} mendekati SBML`,
+      pesan: (
+        <div className="space-y-2">
+          <p>Honor <b>{peran}</b> di <b>{labelBulan(k.bulan_honor)}</b>{honorBaru ? ' (termasuk kegiatan ini)' : ''} — SBML {rupiah(batas)}:</p>
+          <ul className="space-y-1.5">
+            {calon.slice(0, 6).map((m) => (
+              <li key={m.id} className={cx('rounded-xl px-3 py-2', status(m) === 'lewat' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800')}>
+                <div className="flex justify-between gap-2"><b className="truncate">{m.nama}</b><span className="angka shrink-0 font-semibold">{persen(nanti(m), batas!)}%</span></div>
+                <div className="angka text-xs">{rupiah(nanti(m))} / {rupiah(batas)}</div>
+              </li>
+            ))}
+          </ul>
+          {calon.length > 6 && <p className="text-xs">…dan {calon.length - 6} mitra lainnya.</p>}
+          <p>Tetap pilih {calon.length > 1 ? 'mitra-mitra ini' : 'mitra ini'}?</p>
+        </div>
+      ),
+      tombol: 'Tetap pilih',
+      bahaya: lewat,
+    });
+  };
+
+  const catatSetuju = (calon: Kandidat[]) => setDisetujui((d) => { const n = new Map(d); calon.forEach((m) => n.set(m.id, status(m))); return n; });
+
+  const balik = async (m: Kandidat) => {
+    if (dipilih.has(m.id)) { setDipilih((s) => { const n = new Set(s); n.delete(m.id); return n; }); return; }
+    const st = status(m);
+    if ((st === 'dekat' || st === 'lewat') && lebihBuruk(st, disetujui.get(m.id))) {
+      if (!(await peringatan([m]))) return;
+      catatSetuju([m]);
+    }
+    setDipilih((s) => new Set(s).add(m.id));
+  };
+  const pilihSemua = async () => {
+    const baru = daftar.filter((m) => !dipilih.has(m.id));
+    const berisiko = baru.filter((m) => { const st = status(m); return (st === 'dekat' || st === 'lewat') && lebihBuruk(st, disetujui.get(m.id)); });
+    let ambil = baru;
+    if (berisiko.length) {
+      if (await peringatan(berisiko)) catatSetuju(berisiko);
+      else ambil = baru.filter((m) => !berisiko.includes(m));
+    }
+    setDipilih(new Set([...dipilih, ...ambil.map((m) => m.id)]));
+  };
+
   const tambah = useAksi(() => api.post(`/kegiatan/${k.id}/petugas`, { items: [...dipilih].map((id) => ({ mitra_id: id, peran, volume, tarif })) }), {
     sukses: () => `${dipilih.size} petugas ditambahkan sebagai ${peran}.`, setelah: tutup,
   });
-  const balik = (id: number) => setDipilih((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const melebihi = [...dipilih].filter((id) => { const m = data?.mitra.find((x) => x.id === id); return batas && m && m.total_bulan + honorBaru > batas; }).length;
+  const kirim = async () => {
+    // cek ulang: volume/tarif bisa diubah setelah mitra dipilih
+    const terpilih = (data?.mitra ?? []).filter((m) => dipilih.has(m.id));
+    const berisiko = terpilih.filter((m) => { const st = status(m); return (st === 'dekat' || st === 'lewat') && lebihBuruk(st, disetujui.get(m.id)); });
+    if (berisiko.length && !(await peringatan(berisiko))) return;
+    tambah.mutate(undefined);
+  };
+  const jumlahBerisiko = (data?.mitra ?? []).filter((m) => dipilih.has(m.id) && status(m) !== 'aman' && status(m) !== 'tanpa').length;
 
   return (
-    <Jendela buka={buka} tutup={tutup} lebar="max-w-3xl" judul="Tambah petugas" sub={k.nama}
+    <Jendela buka={buka} tutup={tutup} lebar="max-w-3xl" judul="Tambah petugas" sub={`${k.nama} · honor ${labelBulan(k.bulan_honor)}`}
       kaki={<>
-        <span className="mr-auto text-sm text-stone-500">{dipilih.size ? <><b className="text-stone-800">{dipilih.size}</b> mitra dipilih{melebihi > 0 && <span className="ml-2 font-semibold text-rose-600">· {melebihi} akan melebihi batas</span>}</> : 'Belum ada yang dipilih'}</span>
+        <span className="mr-auto text-sm text-stone-500">{dipilih.size ? <><b className="text-stone-800">{dipilih.size}</b> mitra dipilih{jumlahBerisiko > 0 && <span className="ml-2 font-semibold text-amber-600">· {jumlahBerisiko} mendekati/melebihi SBML</span>}</> : 'Belum ada yang dipilih'}</span>
         <Tombol varian="kedua" onClick={tutup}>Batal</Tombol>
-        <Tombol disabled={!dipilih.size} memuat={tambah.isPending} ikon={<UserPlus className="size-4" />} onClick={() => tambah.mutate(undefined)}>Tambahkan</Tombol>
+        <Tombol disabled={!dipilih.size} memuat={tambah.isPending} ikon={<UserPlus className="size-4" />} onClick={kirim}>Tambahkan</Tombol>
       </>}>
       <div className="mb-4 grid gap-3 rounded-2xl bg-stone-50 p-4 sm:grid-cols-3">
-        <Kolom label="Sebagai"><Pilihan nilai={peran} ubah={gantiPeran} opsi={[...new Set([...peranAda, ...(atur?.daftar_peran ?? [])])]} /></Kolom>
+        <Kolom label="Sebagai" petunjuk={batas ? `SBML ${peran}: ${rupiah(batas)}/bulan` : `SBML ${peran} belum diatur`}><Pilihan nilai={peran} ubah={gantiPeran} opsi={[...new Set([...peranAda, ...(atur?.daftar_peran ?? [])])]} /></Kolom>
         <Kolom label={`Volume (${k.satuan})`} petunjuk="Boleh diisi nanti"><Masukan type="number" min={0} value={volume || ''} onChange={(e) => setVolume(Number(e.target.value))} placeholder="0" /></Kolom>
         <Kolom label="Tarif" petunjuk={honorBaru ? `Honor per orang ${rupiah(honorBaru)}` : 'dari tarif kegiatan'}><MasukanRupiah nilai={tarif} ubah={setTarif} /></Kolom>
       </div>
@@ -244,31 +345,36 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
         <Kotak aktif={sembunyi} ubah={setSembunyi} label={`Sembunyikan yang sudah jadi ${peran}`} />
       </div>
       <div className="mb-2 flex items-center justify-between text-xs text-stone-500">
-        <button className="font-semibold text-brand-700 hover:underline" onClick={() => setDipilih(new Set([...dipilih, ...daftar.map((m) => m.id)]))}>Pilih semua yang tampil ({daftar.length})</button>
+        <button className="font-semibold text-brand-700 hover:underline" onClick={pilihSemua}>Pilih semua yang tampil ({daftar.length})</button>
+        <span className="hidden sm:inline">Kanan: honor {peran} {labelBulan(k.bulan_honor)}{honorBaru ? ' + kegiatan ini' : ''} / SBML</span>
         {dipilih.size > 0 && <button className="font-semibold hover:underline" onClick={() => setDipilih(new Set())}>Kosongkan pilihan</button>}
       </div>
       {!data ? <Memuat /> : daftar.length === 0 ? <p className="py-10 text-center text-sm text-stone-400">Tidak ada mitra aktif yang cocok. Tambahkan mitra di menu Mitra.</p> : (
         <ul className="scroll-tipis max-h-[42vh] space-y-1 overflow-y-auto pr-1">
           {daftar.slice(0, 300).map((m) => {
             const aktif = dipilih.has(m.id);
-            const nanti = m.total_bulan + (aktif ? honorBaru : 0);
-            const lewat = !!batas && nanti > batas;
+            const tampilHonor = sekarang(m) + (aktif ? honorBaru : 0);
+            const st = statusSbml(tampilHonor, batas, ambang);
             return (
               <motion.li key={m.id} layout="position">
-                <button onClick={() => balik(m.id)} className={cx('flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition', aktif ? 'border-brand-300 bg-brand-50/60' : 'border-transparent hover:bg-stone-50')}>
-                  <Kotak aktif={aktif} ubah={() => balik(m.id)} />
+                <button onClick={() => balik(m)} className={cx('flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition', aktif ? 'border-brand-300 bg-brand-50/60' : 'border-transparent hover:bg-stone-50')}>
+                  <Kotak aktif={aktif} ubah={() => balik(m)} />
                   <Avatar nama={m.nama} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="truncate text-sm font-semibold text-stone-800">{m.nama}</span>
                       {m.peran_di_sini && <Lencana warna="brand">sudah {m.peran_di_sini}</Lencana>}
                       {m.bentrok > 0 && <Lencana warna="kuning">{m.bentrok} kegiatan bersamaan</Lencana>}
+                      {st === 'dekat' && <Lencana warna="kuning">mendekati SBML</Lencana>}
+                      {st === 'lewat' && <Lencana warna="merah">melebihi SBML</Lencana>}
                     </div>
                     <div className="truncate text-xs text-stone-400">{[m.kecamatan, m.desa].filter(Boolean).join(' · ') || m.sobat_id || '—'}</div>
                   </div>
-                  <div className="w-36 shrink-0 text-right">
-                    <div className={cx('angka text-xs font-semibold', lewat ? 'text-rose-600' : 'text-stone-500')}>{rupiah(nanti)}{batas ? <span className="font-normal text-stone-300"> / {rupiah(batas)}</span> : ''}</div>
-                    <Batang nilai={nanti} maks={batas} className="ml-auto mt-1 w-28" />
+                  <div className="w-40 shrink-0 text-right">
+                    <div className={cx('angka text-xs font-semibold', st === 'lewat' ? 'text-rose-600' : st === 'dekat' ? 'text-amber-600' : 'text-stone-500')}>
+                      {rupiah(tampilHonor)}{batas ? <span className="font-normal text-stone-300"> / {rupiah(batas)}</span> : ''}
+                    </div>
+                    <Batang nilai={tampilHonor} maks={batas} ambang={ambang} className="ml-auto mt-1 w-28" />
                   </div>
                 </button>
               </motion.li>

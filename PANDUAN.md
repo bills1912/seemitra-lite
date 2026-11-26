@@ -12,7 +12,7 @@ Hampir semua hal yang biasa berubah dari tahun ke tahun bisa diatur langsung dar
 | Yang ingin diubah | Caranya |
 |---|---|
 | Nama/NIP PPK, nama & alamat kantor | **Pengaturan → Kantor & PPK** |
-| Batas honor mitra per bulan (SBML) tahun baru | **Pengaturan → Batas honor (SBML)** |
+| SBML (batas honor mitra per bulan) per peran PPL/PML/Pengolahan, tahun baru, dan ambang peringatan | **Pengaturan → Batas honor (SBML)** |
 | Format nomor SPK / BAST | **Pengaturan → Format nomor** |
 | Daftar peran (PPL, PML, …), satuan, jenis kegiatan | **Pengaturan → Peran & satuan** |
 | Isi kalimat, kop, tata letak SPK & BAST | **Pengaturan → Template dokumen** (edit di Microsoft Word) |

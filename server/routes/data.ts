@@ -13,21 +13,38 @@ export const data = new Hono<Env>();
 const kosong = (v: unknown) => (v === undefined || v === '' ? null : v);
 const teks = (v: unknown) => (v === undefined || v === null ? null : String(v).trim() || null);
 
-function batasHonor(tahun: number): number | null {
-  const r = db.prepare('SELECT nominal FROM batas_honor WHERE tahun = ?').get(tahun) as { nominal: number } | undefined;
-  return r?.nominal ?? null;
+/**
+ * SBML (batas honor mitra per bulan) — berbeda untuk setiap PERAN dan dicek PER BULAN KEGIATAN
+ * (bulan honor). Contoh: honor PPL seorang mitra di bulan Maret dibandingkan dengan SBML PPL tahun itu.
+ */
+export function sbmlTahun(tahun: number): Record<string, number> {
+  const rows = db.prepare('SELECT peran, nominal FROM sbml WHERE tahun = ?').all(tahun) as { peran: string; nominal: number }[];
+  return Object.fromEntries(rows.map((r) => [r.peran, r.nominal]));
 }
-export { batasHonor };
+export const sbmlBulan = (bulan: string) => sbmlTahun(Number(bulan.slice(0, 4)));
 
-/** Total honor seorang mitra pada satu bulan (dari semua kegiatan yang tidak dihapus). */
-const SQL_HONOR_BULAN = `
-  SELECT p.mitra_id, SUM(p.volume * p.tarif) AS total
-  FROM penugasan p JOIN kegiatan k ON k.id = p.kegiatan_id
-  WHERE k.dihapus IS NULL AND k.bulan_honor = ?
-  GROUP BY p.mitra_id`;
-export function honorPerMitra(bulan: string): Map<number, number> {
-  const rows = db.prepare(SQL_HONOR_BULAN).all(bulan) as { mitra_id: number; total: number }[];
-  return new Map(rows.map((r) => [r.mitra_id, r.total]));
+/** Honor setiap mitra pada satu bulan, dirinci per peran: Map<mitra_id, { PPL: 1200000, PML: … }> */
+export function honorPeranBulan(bulan: string): Map<number, Record<string, number>> {
+  const rows = db
+    .prepare(
+      `SELECT p.mitra_id, p.peran, SUM(p.volume * p.tarif) AS total
+       FROM penugasan p JOIN kegiatan k ON k.id = p.kegiatan_id
+       WHERE k.dihapus IS NULL AND k.bulan_honor = ? GROUP BY p.mitra_id, p.peran`,
+    )
+    .all(bulan) as { mitra_id: number; peran: string; total: number }[];
+  const peta = new Map<number, Record<string, number>>();
+  for (const r of rows) peta.set(r.mitra_id, { ...(peta.get(r.mitra_id) ?? {}), [r.peran]: r.total });
+  return peta;
+}
+
+/** Daftar mitra yang melebihi SBML pada bulan tsb (minimal satu peran). */
+export function mitraLewatSbml(bulan: string) {
+  const batas = sbmlBulan(bulan);
+  const hasil: { mitra_id: number; peran: string; honor: number; batas: number }[] = [];
+  for (const [id, per] of honorPeranBulan(bulan)) {
+    for (const [peran, honor] of Object.entries(per)) if (batas[peran] && honor > batas[peran]) hasil.push({ mitra_id: id, peran, honor, batas: batas[peran] });
+  }
+  return hasil;
 }
 
 /* =============================== MITRA =============================== */
@@ -61,8 +78,14 @@ data.get('/mitra', (c) => {
        FROM mitra m WHERE ${terhapus ? 'm.dihapus IS NOT NULL' : 'm.dihapus IS NULL'}
        ORDER BY m.nama COLLATE NOCASE`,
     )
-    .all(bulan);
-  return c.json(rows);
+    .all(bulan) as Record<string, unknown>[];
+  const batas = sbmlBulan(bulan);
+  const per = honorPeranBulan(bulan);
+  return c.json(rows.map((m) => {
+    const h = per.get(Number(m.id)) ?? {};
+    const rasio = Math.max(0, ...Object.entries(h).map(([p, v]) => (batas[p] ? v / batas[p] : 0)));
+    return { ...m, rasio_sbml: Object.keys(batas).length ? rasio : null };
+  }));
 });
 
 data.get('/mitra/:id', (c) => {
@@ -76,7 +99,8 @@ data.get('/mitra/:id', (c) => {
        WHERE p.mitra_id = ? AND k.dihapus IS NULL ORDER BY k.bulan_honor DESC, k.tanggal_mulai DESC`,
     )
     .all(id);
-  return c.json({ mitra, tugas });
+  const tahun = [...new Set((tugas as { bulan_honor: string }[]).map((t) => Number(t.bulan_honor.slice(0, 4))))];
+  return c.json({ mitra, tugas, sbml: Object.fromEntries(tahun.map((t) => [t, sbmlTahun(t)])), ambang: ambilPengaturan().ambang_sbml });
 });
 
 data.post('/mitra', async (c) => {
@@ -235,11 +259,12 @@ data.get('/kegiatan/:id', (c) => {
        FROM penugasan p JOIN mitra m ON m.id = p.mitra_id WHERE p.kegiatan_id = ? ORDER BY p.peran, m.nama COLLATE NOCASE`,
     )
     .all(id) as Record<string, unknown>[];
-  const honor = honorPerMitra(String(k.bulan_honor));
+  const per = honorPeranBulan(String(k.bulan_honor));
   return c.json({
     kegiatan: parsKegiatan(k),
-    petugas: petugas.map((p) => ({ ...p, total_bulan: honor.get(Number(p.mitra_id)) ?? 0 })),
-    batas: batasHonor(Number(String(k.bulan_honor).slice(0, 4))),
+    petugas: petugas.map((p) => ({ ...p, honor_peran: per.get(Number(p.mitra_id)) ?? {} })),
+    sbml: sbmlBulan(String(k.bulan_honor)),
+    ambang: ambilPengaturan().ambang_sbml,
   });
 });
 
@@ -248,7 +273,7 @@ data.get('/kegiatan/:id/kandidat', (c) => {
   const id = Number(c.req.param('id'));
   const k = db.prepare('SELECT * FROM kegiatan WHERE id = ?').get(id) as Record<string, string> | undefined;
   if (!k) throw new GagalError('Kegiatan tidak ditemukan.', 404);
-  const honor = honorPerMitra(k.bulan_honor);
+  const per = honorPeranBulan(k.bulan_honor);
   const rows = db
     .prepare(
       `SELECT m.id, m.nama, m.sobat_id, m.kecamatan, m.desa, m.pekerjaan,
@@ -260,8 +285,9 @@ data.get('/kegiatan/:id/kandidat', (c) => {
     )
     .all(id, id, k.tanggal_selesai, k.tanggal_mulai) as Record<string, unknown>[];
   return c.json({
-    mitra: rows.map((r) => ({ ...r, total_bulan: honor.get(Number(r.id)) ?? 0 })),
-    batas: batasHonor(Number(k.bulan_honor.slice(0, 4))),
+    mitra: rows.map((r) => ({ ...r, honor_peran: per.get(Number(r.id)) ?? {} })),
+    sbml: sbmlBulan(k.bulan_honor),
+    ambang: ambilPengaturan().ambang_sbml,
   });
 });
 

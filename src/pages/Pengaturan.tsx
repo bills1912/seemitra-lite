@@ -127,36 +127,69 @@ function TabNomor() {
 }
 
 function TabBatas({ admin }: { admin: boolean }) {
-  const { data } = useQuery({ queryKey: ['batas'], queryFn: () => api.get<{ tahun: number; nominal: number }[]>('/batas-honor') });
-  const [tahun, setTahun] = useState(new Date().getFullYear());
-  const [nominal, setNominal] = useState(0);
-  const simpan = useAksi((v: { tahun: number; nominal: number }) => api.put('/batas-honor', v), { sukses: (_, v) => (v.nominal ? `Batas ${v.tahun} disimpan.` : `Batas ${v.tahun} dihapus.`) });
+  const { data: daftar } = useQuery({ queryKey: ['sbml'], queryFn: () => api.get<{ tahun: number; peran: string; nominal: number }[]>('/sbml') });
+  const { data: atur } = usePengaturan();
+  const tahunIni = new Date().getFullYear();
+  const [tahun, setTahun] = useState(tahunIni);
+  const [nilai, setNilai] = useState<Record<string, number>>({});
+  const [ambang, setAmbang] = useState(80);
+  useEffect(() => {
+    if (!daftar) return;
+    setNilai(Object.fromEntries(daftar.filter((d) => d.tahun === tahun).map((d) => [d.peran, d.nominal])));
+  }, [daftar, tahun]);
+  useEffect(() => { if (atur) setAmbang(atur.ambang_sbml); }, [atur]);
+  const simpan = useAksi(() => api.put('/sbml', { tahun, nilai }), { sukses: `SBML ${tahun} disimpan.` });
+  const simpanAmbang = useAksi(() => api.put('/pengaturan', { ambang_sbml: ambang }), { sukses: 'Ambang peringatan disimpan.' });
+  const peran = [...new Set([...(atur?.daftar_peran ?? []), ...(daftar ?? []).filter((d) => d.tahun === tahun).map((d) => d.peran)])];
+  const tahunAda = [...new Set([tahunIni, tahunIni + 1, ...(daftar ?? []).map((d) => d.tahun)])].sort((a, b) => b - a);
+  const perTahun = tahunAda.map((t) => ({ t, isi: (daftar ?? []).filter((d) => d.tahun === t) })).filter((x) => x.isi.length);
+
   return (
-    <Panel judul="Batas honor mitra per bulan (SBML)" ket="Aplikasi memberi peringatan bila total honor seorang mitra dalam satu bulan melebihi batas ini. Penugasan tetap bisa disimpan.">
-      {admin && (
-        <div className="mb-6 flex flex-col gap-3 rounded-2xl bg-stone-50 p-4 sm:flex-row sm:items-end">
-          <Kolom label="Tahun" className="sm:w-32"><Masukan type="number" value={tahun} onChange={(e) => setTahun(Number(e.target.value))} /></Kolom>
-          <Kolom label="Batas per mitra per bulan" className="flex-1"><MasukanRupiah nilai={nominal} ubah={setNominal} /></Kolom>
-          <Tombol disabled={!nominal} memuat={simpan.isPending} onClick={() => simpan.mutate({ tahun, nominal })}>Simpan</Tombol>
+    <div className="space-y-5">
+      <Panel judul="SBML honor mitra per bulan, per peran"
+        ket={<>Batas honor <b>berbeda untuk setiap peran</b> dan dicek <b>per bulan kegiatan</b>: honor seorang mitra untuk satu peran di satu bulan (dari semua kegiatan) dibandingkan dengan SBML peran tersebut. Penugasan tetap bisa disimpan setelah peringatan dikonfirmasi.</>}
+        kaki={admin ? <Tombol memuat={simpan.isPending} onClick={() => simpan.mutate(undefined)}>Simpan SBML {tahun}</Tombol> : undefined}>
+        <div className="mb-5 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-stone-600">Tahun</span>
+          <Pilihan nilai={String(tahun)} ubah={(v) => setTahun(Number(v))} opsi={tahunAda.map(String)} className="w-36" />
         </div>
-      )}
-      {!data?.length ? <p className="py-6 text-center text-sm text-stone-400">Belum ada batas yang diatur.</p> : (
-        <ul className="divide-y divide-stone-100">
-          {data.map((b) => (
-            <motion.li layout key={b.tahun} className="flex items-center justify-between py-3">
-              <span className="font-bold text-stone-800">{b.tahun}</span>
-              <div className="flex items-center gap-2">
-                <span className="angka font-semibold text-stone-700">{rupiah(b.nominal)}</span>
-                {admin && <>
-                  <TombolIkon label="Ubah" onClick={() => { setTahun(b.tahun); setNominal(b.nominal); }}><Pencil className="size-4" /></TombolIkon>
-                  <TombolIkon label="Hapus" onClick={() => simpan.mutate({ tahun: b.tahun, nominal: 0 })}><Trash2 className="size-4" /></TombolIkon>
-                </>}
-              </div>
-            </motion.li>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {peran.map((p) => (
+            <Kolom key={p} label={`SBML ${p}`} petunjuk="per mitra per bulan · kosongkan bila tidak dibatasi">
+              <MasukanRupiah nilai={nilai[p]} ubah={(n) => setNilai({ ...nilai, [p]: n })} disabled={!admin} placeholder="belum diatur" />
+            </Kolom>
           ))}
-        </ul>
+        </div>
+        <p className="mt-4 text-xs text-stone-400">Daftar peran mengikuti <b>Pengaturan → Peran &amp; satuan</b>.</p>
+      </Panel>
+
+      <Panel judul="Ambang peringatan dini" ket="Saat memilih petugas, aplikasi menampilkan popup bila honor mitra sudah mencapai persentase ini dari SBML perannya."
+        kaki={admin ? <Tombol memuat={simpanAmbang.isPending} onClick={() => simpanAmbang.mutate(undefined)}>Simpan ambang</Tombol> : undefined}>
+        <div className="flex items-center gap-4">
+          <input type="range" min={50} max={100} step={5} value={ambang} disabled={!admin} onChange={(e) => setAmbang(Number(e.target.value))} className="w-64 accent-brand-600" />
+          <span className="text-2xl font-extrabold text-stone-900">{ambang}%</span>
+          <span className="text-sm text-stone-500">mis. SBML Rp3.000.000 → peringatan mulai {rupiah((3000000 * ambang) / 100)}</span>
+        </div>
+      </Panel>
+
+      {perTahun.length > 0 && (
+        <Panel judul="Ringkasan SBML tersimpan">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-xs font-bold uppercase tracking-wide text-stone-400"><th className="pb-2">Tahun</th>{peran.map((p) => <th key={p} className="pb-2 text-right">{p}</th>)}</tr></thead>
+              <tbody className="divide-y divide-stone-100">
+                {perTahun.map(({ t, isi }) => (
+                  <tr key={t} className="cursor-pointer hover:bg-stone-50" onClick={() => setTahun(t)}>
+                    <td className="py-2.5 font-bold text-stone-800">{t}</td>
+                    {peran.map((p) => { const v = isi.find((x) => x.peran === p)?.nominal; return <td key={p} className="angka py-2.5 text-right text-stone-700">{v ? rupiah(v) : <span className="text-stone-300">—</span>}</td>; })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
       )}
-    </Panel>
+    </div>
   );
 }
 

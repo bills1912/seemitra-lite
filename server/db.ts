@@ -88,6 +88,15 @@ const MIGRASI: string[] = [
   /* 2 — pendaftaran akun: akun baru menunggu persetujuan admin */ `
   ALTER TABLE pengguna ADD COLUMN status TEXT NOT NULL DEFAULT 'aktif';
   `,
+  /* 3 — SBML per peran (PPL/PML/Pengolahan/…) per tahun; batas lama disalin ke setiap peran */ `
+  CREATE TABLE sbml (
+    tahun INTEGER NOT NULL, peran TEXT NOT NULL, nominal REAL NOT NULL,
+    PRIMARY KEY (tahun, peran)
+  );
+  INSERT INTO sbml (tahun, peran, nominal)
+    SELECT b.tahun, p.value, b.nominal FROM batas_honor b,
+      json_each(COALESCE((SELECT json_extract(nilai, '$.daftar_peran') FROM pengaturan WHERE kunci = 'umum'), '["PPL","PML","Pengolahan"]')) p;
+  `,
 ];
 
 function jalankanMigrasi() {
@@ -124,6 +133,8 @@ export type Pengaturan = {
   daftar_peran: string[];
   daftar_satuan: string[];
   daftar_jenis: string[];
+  /** Persen dari SBML untuk mulai memberi peringatan "hampir mencapai SBML" */
+  ambang_sbml: number;
 };
 
 export const PENGATURAN_AWAL: Pengaturan = {
@@ -139,6 +150,7 @@ export const PENGATURAN_AWAL: Pengaturan = {
   daftar_peran: ['PPL', 'PML', 'Pengolahan'],
   daftar_satuan: ['Dokumen', 'Ruta', 'BS', 'SLS', 'Usaha', 'Desa', 'OB', 'Kegiatan'],
   daftar_jenis: ['Survei', 'Sensus', 'Lainnya'],
+  ambang_sbml: 80,
 };
 
 export function ambilPengaturan(): Pengaturan {
@@ -180,7 +192,7 @@ export function transaksi<T>(fn: () => T): T {
 }
 
 /* ---------------- Cadangan data (format JSON, bisa dipulihkan dari menu Pengaturan) ---------------- */
-export const TABEL_CADANGAN = ['pengaturan', 'pengguna', 'mitra', 'kegiatan', 'penugasan', 'nomor_dokumen', 'spk_bulan', 'batas_honor', 'riwayat'];
+export const TABEL_CADANGAN = ['pengaturan', 'pengguna', 'mitra', 'kegiatan', 'penugasan', 'nomor_dokumen', 'spk_bulan', 'batas_honor', 'sbml', 'riwayat'];
 
 export function isiCadangan() {
   const tabel: Record<string, unknown[]> = {};

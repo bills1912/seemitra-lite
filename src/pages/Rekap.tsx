@@ -8,23 +8,32 @@ import type { BarisRekap } from '../lib/types';
 import { useUmpan } from '../components/umpan';
 import { AngkaHidup, Avatar, Batang, KepalaHalaman, Kartu, Kosong, Kotak, KotakCari, Kerangka, PemilihBulan, Tombol, cx } from '../components/ui';
 import { angka, bulanIni, cocok, labelBulan, rupiah } from '../lib/format';
+import { jumlahPerPeran, persen, statusSbml, statusTerburuk, type PetaSbml } from '../lib/sbml';
 
-type DataRekap = { bulan: string; baris: BarisRekap[]; kegiatan: { id: number; nama: string; satuan: string; petugas: number; total: number }[]; batas: number | null };
+type DataRekap = { bulan: string; baris: BarisRekap[]; kegiatan: { id: number; nama: string; satuan: string; petugas: number; total: number }[]; sbml: PetaSbml; ambang: number };
 
 export function Rekap() {
   const [param, setParam] = useSearchParams();
   const bulan = param.get('bulan') ?? bulanIni();
   const setBulan = (b: string) => setParam({ bulan: b }, { replace: true });
   const [q, setQ] = useState('');
-  const [hanyaLebih, setHanyaLebih] = useState(false);
+  const [hanyaLebih, setHanyaLebih] = useState(param.get('lewat') === '1');
   const [buka, setBuka] = useState<number | null>(null);
   const { beritahu } = useUmpan();
   const { data, isFetching } = useQuery({ queryKey: ['rekap', bulan], queryFn: () => api.get<DataRekap>(`/rekap?bulan=${bulan}`), placeholderData: (p) => p });
 
-  const batas = data?.batas ?? null;
-  const baris = useMemo(() => (data?.baris ?? []).filter((b) => (!hanyaLebih || (batas && b.total > batas)) && (!q || cocok(`${b.nama} ${b.sobat_id ?? ''} ${b.kecamatan ?? ''}`, q))), [data, q, hanyaLebih, batas]);
-  const total = (data?.baris ?? []).reduce((s, b) => s + b.total, 0);
-  const lebih = (data?.baris ?? []).filter((b) => batas && b.total > batas).length;
+  const sbml = data?.sbml ?? {};
+  const ambang = data?.ambang ?? 80;
+  const adaSbml = Object.keys(sbml).length > 0;
+  // status SBML setiap mitra: dicek per peran untuk bulan ini
+  const semua = useMemo(() => (data?.baris ?? []).map((b) => {
+    const per = jumlahPerPeran(b.tugas);
+    return { ...b, per, terburuk: statusTerburuk(per, data?.sbml ?? {}, data?.ambang ?? 80) };
+  }), [data]);
+  const baris = semua.filter((b) => (!hanyaLebih || b.terburuk.status === 'lewat') && (!q || cocok(`${b.nama} ${b.sobat_id ?? ''} ${b.kecamatan ?? ''}`, q)));
+  const total = semua.reduce((s, b) => s + b.total, 0);
+  const lebih = semua.filter((b) => b.terburuk.status === 'lewat').length;
+  const dekat = semua.filter((b) => b.terburuk.status === 'dekat').length;
 
   return (
     <div>
@@ -40,7 +49,7 @@ export function Rekap() {
           ['Total honor', <AngkaHidup key="a" nilai={total} format={rupiah} />],
           ['Mitra menerima honor', <AngkaHidup key="b" nilai={data?.baris.length ?? 0} />],
           ['Kegiatan', <AngkaHidup key="c" nilai={data?.kegiatan.length ?? 0} />],
-          ['Melebihi batas SBML', batas ? <span key="d" className={lebih ? 'text-rose-600' : 'text-emerald-600'}><AngkaHidup nilai={lebih} /> <span className="text-sm font-semibold text-stone-400">/ batas {rupiah(batas)}</span></span> : <Link key="d" to="/pengaturan?tab=batas" className="text-base text-brand-700 underline">Atur batas</Link>],
+          ['Melebihi SBML', adaSbml ? <span key="d" className={lebih ? 'text-rose-600' : 'text-emerald-600'}><AngkaHidup nilai={lebih} /> <span className="text-sm font-semibold text-stone-400">mitra{dekat ? ` · ${dekat} mendekati` : ''}</span></span> : <Link key="d" to="/pengaturan?tab=batas" className="text-base text-brand-700 underline">Atur SBML</Link>],
         ].map(([l, v], i) => (
           <Kartu key={i} className="p-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <div className="text-[13px] font-semibold text-stone-500">{l}</div>
@@ -49,6 +58,9 @@ export function Rekap() {
         ))}
       </div>
 
+      {adaSbml && (
+        <p className="-mt-2 mb-4 text-xs text-stone-500">SBML {bulan.slice(0, 4)} per bulan: {Object.entries(sbml).map(([p, v]) => `${p} ${rupiah(v)}`).join(' · ')} — dicek per peran untuk setiap bulan.</p>
+      )}
       {data && data.kegiatan.length > 0 && (
         <div className="mb-5 flex flex-wrap gap-2">
           {data.kegiatan.map((k) => (
@@ -63,7 +75,7 @@ export function Rekap() {
       <Kartu className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-stone-100 p-3 sm:flex-row sm:items-center">
           <KotakCari nilai={q} ubah={setQ} placeholder="Cari mitra…" className="flex-1 sm:max-w-sm" />
-          {batas && <Kotak aktif={hanyaLebih} ubah={setHanyaLebih} label="Hanya yang melebihi batas" />}
+          {adaSbml && <Kotak aktif={hanyaLebih} ubah={setHanyaLebih} label="Hanya yang melebihi SBML" />}
           {isFetching && <span className="text-xs text-stone-400 sm:ml-auto">memperbarui…</span>}
         </div>
         {!data ? <div className="space-y-2 p-4">{[1, 2, 3].map((i) => <Kerangka key={i} className="h-14" />)}</div> : baris.length === 0 ? (
@@ -73,7 +85,8 @@ export function Rekap() {
           <motion.ul key={bulan} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="divide-y divide-stone-100">
             {baris.map((b, i) => {
               const terbuka = buka === b.mitra_id;
-              const lewat = !!batas && b.total > batas;
+              const lewat = b.terburuk.status === 'lewat';
+              const t = b.terburuk;
               return (
                 <motion.li key={b.mitra_id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { delay: Math.min(i, 15) * 0.02 } }}>
                   <button onClick={() => setBuka(terbuka ? null : b.mitra_id)} className="flex w-full items-center gap-4 px-4 py-3 text-left transition hover:bg-stone-50/70">
@@ -83,7 +96,10 @@ export function Rekap() {
                       <div className="flex items-center gap-2"><span className="truncate font-semibold text-stone-800">{b.nama}</span>{lewat && <AlertTriangle className="size-4 shrink-0 text-rose-500" />}</div>
                       <div className="truncate text-xs text-stone-400">{b.tugas.length} tugas · {[...new Set(b.tugas.map((t) => t.kegiatan))].join(', ')}</div>
                     </div>
-                    <div className="hidden w-48 sm:block"><Batang nilai={b.total} maks={batas} tebal /></div>
+                    <div className="hidden w-48 sm:block">
+                      {t.peran && <div className={cx('mb-1 text-right text-[11px] font-semibold', t.status === 'lewat' ? 'text-rose-600' : t.status === 'dekat' ? 'text-amber-600' : 'text-stone-400')}>{t.peran} {Math.round(t.rasio * 100)}% SBML</div>}
+                      <Batang nilai={t.rasio} maks={t.peran ? 1 : null} ambang={ambang} tebal />
+                    </div>
                     <span className={cx('angka w-32 text-right font-bold', lewat ? 'text-rose-600' : 'text-stone-800')}>{rupiah(b.total)}</span>
                     <motion.span animate={{ rotate: terbuka ? 180 : 0 }}><ChevronDown className="size-4 text-stone-400" /></motion.span>
                   </button>
@@ -91,6 +107,18 @@ export function Rekap() {
                     {terbuka && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 32 }} className="overflow-hidden">
                         <div className="mx-4 mb-4 rounded-2xl bg-stone-50 p-4 sm:ml-[4.5rem]">
+                          {adaSbml && (
+                            <div className="mb-3 flex flex-wrap gap-2">
+                              {Object.entries(b.per).map(([p, v]) => {
+                                const st = statusSbml(v, sbml[p], ambang);
+                                return (
+                                  <span key={p} className={cx('rounded-lg px-2.5 py-1 text-xs font-semibold', st === 'lewat' ? 'bg-rose-100 text-rose-700' : st === 'dekat' ? 'bg-amber-100 text-amber-800' : 'bg-white text-stone-600')}>
+                                    {p}: {rupiah(v)}{sbml[p] ? ` / ${rupiah(sbml[p])} (${persen(v, sbml[p])}%)` : ' · SBML belum diatur'}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                           <table className="w-full text-sm">
                             <thead><tr className="text-left text-xs text-stone-400"><th className="pb-2 font-semibold">Kegiatan</th><th className="pb-2 font-semibold">Peran</th><th className="pb-2 text-right font-semibold">Volume</th><th className="pb-2 text-right font-semibold">Tarif</th><th className="pb-2 text-right font-semibold">Honor</th></tr></thead>
                             <tbody>

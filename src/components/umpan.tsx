@@ -63,8 +63,8 @@ export function PenyediaUmpan({ children }: { children: ReactNode }) {
         {dialog && (
           <motion.div className="fixed inset-0 z-[70] grid place-items-center p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="absolute inset-0 bg-stone-900/30 backdrop-blur-[2px]" onClick={() => jawab(false)} />
-            <motion.div initial={{ scale: 0.9, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }} transition={pegas}
-              className="relative w-full max-w-sm rounded-3xl bg-white p-6 shadow-melayang">
+            <motion.div role="alertdialog" aria-modal="true" tabIndex={-1} ref={(el) => el?.focus({ preventScroll: true })} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); jawab(false); } }} initial={{ scale: 0.9, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }} transition={pegas}
+              className="scroll-tipis relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-6 shadow-melayang outline-none">
               <div className={cx('mb-4 grid size-12 place-items-center rounded-2xl', dialog.bahaya ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')}>
                 <AlertTriangle className="size-6" />
               </div>
@@ -72,7 +72,7 @@ export function PenyediaUmpan({ children }: { children: ReactNode }) {
               {dialog.pesan && <div className="mt-1.5 text-sm text-stone-500">{dialog.pesan}</div>}
               <div className="mt-6 flex justify-end gap-2">
                 <Tombol varian="kedua" onClick={() => jawab(false)}>Batal</Tombol>
-                <Tombol varian={dialog.bahaya ? 'bahaya' : 'utama'} onClick={() => jawab(true)} autoFocus>{dialog.tombol ?? 'Ya, lanjutkan'}</Tombol>
+                <Tombol varian={dialog.bahaya ? 'bahaya' : 'utama'} onClick={() => jawab(true)}>{dialog.tombol ?? 'Ya, lanjutkan'}</Tombol>
               </div>
             </motion.div>
           </motion.div>

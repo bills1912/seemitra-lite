@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, ambilPengaturan, simpanPengaturan, catat, isiCadangan, pulihkanCadangan, BACKUP_DIR, TEMPLATE_DIR, PENGATURAN_AWAL } from '../db.ts';
+import { db, ambilPengaturan, simpanPengaturan, catat, transaksi, isiCadangan, pulihkanCadangan, BACKUP_DIR, TEMPLATE_DIR, PENGATURAN_AWAL } from '../db.ts';
 import { wajibAdmin, hashSandi, type Env } from '../auth.ts';
 import { GagalError } from '../util.ts';
 import { unduh } from './data.ts';
@@ -16,6 +16,11 @@ sistem.put('/pengaturan', wajibAdmin, async (c) => {
   const b = await c.req.json();
   const izin = Object.keys(PENGATURAN_AWAL);
   const bersih = Object.fromEntries(Object.entries(b).filter(([k]) => izin.includes(k)));
+  if ('ambang_sbml' in bersih) {
+    const a = Number(bersih.ambang_sbml);
+    if (!(a >= 10 && a <= 100)) throw new GagalError('Ambang peringatan SBML harus antara 10 dan 100 persen.');
+    bersih.ambang_sbml = a;
+  }
   for (const k of ['daftar_peran', 'daftar_satuan', 'daftar_jenis']) {
     if (k in bersih) {
       const arr = [...new Set((bersih[k] as string[]).map((x) => String(x).trim()).filter(Boolean))];
@@ -28,14 +33,19 @@ sistem.put('/pengaturan', wajibAdmin, async (c) => {
   return c.json(hasil);
 });
 
-/* ---------- Batas honor (SBML) ---------- */
-sistem.get('/batas-honor', (c) => c.json(db.prepare('SELECT * FROM batas_honor ORDER BY tahun DESC').all()));
-sistem.put('/batas-honor', wajibAdmin, async (c) => {
-  const { tahun, nominal } = await c.req.json();
-  if (!Number(tahun)) throw new GagalError('Tahun tidak valid.');
-  if (!nominal) db.prepare('DELETE FROM batas_honor WHERE tahun = ?').run(Number(tahun));
-  else db.prepare('INSERT INTO batas_honor VALUES (?, ?) ON CONFLICT(tahun) DO UPDATE SET nominal = excluded.nominal').run(Number(tahun), Number(nominal));
-  catat(c.get('pengguna').nama, 'Ubah batas honor', `${tahun}: ${nominal}`);
+/* ---------- SBML per peran per tahun ---------- */
+sistem.get('/sbml', (c) => c.json(db.prepare('SELECT * FROM sbml ORDER BY tahun DESC, peran').all()));
+/** Simpan SBML satu tahun: { tahun: 2026, nilai: { PPL: 3500000, PML: 4000000 } } (nilai kosong/0 = dihapus) */
+sistem.put('/sbml', wajibAdmin, async (c) => {
+  const { tahun, nilai } = (await c.req.json()) as { tahun: number; nilai: Record<string, number> };
+  if (!Number(tahun) || Number(tahun) < 2000) throw new GagalError('Tahun tidak valid.');
+  transaksi(() => {
+    db.prepare('DELETE FROM sbml WHERE tahun = ?').run(Number(tahun));
+    for (const [peran, n] of Object.entries(nilai ?? {})) {
+      if (peran.trim() && Number(n) > 0) db.prepare('INSERT INTO sbml VALUES (?, ?, ?)').run(Number(tahun), peran.trim(), Number(n));
+    }
+  });
+  catat(c.get('pengguna').nama, 'Ubah SBML', `${tahun}: ${Object.entries(nilai ?? {}).filter(([, n]) => Number(n) > 0).map(([p, n]) => `${p} ${n}`).join(', ') || 'dihapus'}`);
   return c.json({ ok: true });
 });
 

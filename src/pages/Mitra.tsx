@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Mitra } from '../lib/types';
-import { useAksi } from '../lib/hooks';
+import { useAksi, usePengaturan } from '../lib/hooks';
+import { jumlahPerPeran, persen, statusSbml, statusTerburuk } from '../lib/sbml';
 import { useUmpan } from '../components/umpan';
 import { Pilihan, IsianSaran } from '../components/pemilih';
 import {
@@ -29,8 +30,7 @@ export function HalamanMitra() {
   const { beritahu, konfirmasi } = useUmpan();
 
   const { data, isLoading } = useQuery({ queryKey: ['mitra', sampah], queryFn: () => api.get<Mitra[]>(`/mitra${sampah ? '?terhapus=1' : ''}`) });
-  const { data: batasHonor } = useQuery({ queryKey: ['batas'], queryFn: () => api.get<{ tahun: number; nominal: number }[]>('/batas-honor') });
-  const batasIni = batasHonor?.find((b) => b.tahun === Number(bulanIni().slice(0, 4)))?.nominal ?? null;
+  const { data: atur } = usePengaturan();
 
   const lihatId = Number(param.get('lihat')) || null;
   useEffect(() => {
@@ -106,7 +106,7 @@ export function HalamanMitra() {
                   <div className="hidden text-sm md:block"><div className="font-semibold text-stone-700">{m.jumlah_kegiatan ?? 0} kegiatan</div><div className="text-xs text-stone-400">{m.terakhir_bertugas ? `terakhir ${labelBulan(m.terakhir_bertugas)}` : 'belum pernah'}</div></div>
                   <div className="hidden md:block">
                     <div className="angka text-sm font-semibold text-stone-700">{m.honor_bulan_ini ? rupiah(m.honor_bulan_ini) : <span className="text-stone-300">—</span>}</div>
-                    <Batang nilai={m.honor_bulan_ini ?? 0} maks={m.honor_bulan_ini ? batasIni : null} className="mt-1.5 max-w-36" />
+                    {m.rasio_sbml != null && m.honor_bulan_ini ? <Batang nilai={m.rasio_sbml} maks={1} ambang={atur?.ambang_sbml} className="mt-1.5 max-w-36" /> : null}
                   </div>
                   <div className="flex justify-end gap-0.5 md:opacity-0 md:transition md:group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
                     {sampah ? <Tombol kecil varian="lembut" ikon={<ArchiveRestore className="size-4" />} onClick={() => pulihkan.mutate(m)}>Pulihkan</Tombol> : <>
@@ -129,7 +129,7 @@ export function HalamanMitra() {
 
       <FormMitra data={form} tutup={() => setForm(null)} daftarKec={daftarKec} />
       <ImporMitra buka={impor} tutup={() => setImpor(false)} />
-      <DetailMitra id={lihatId} tutup={() => { param.delete('lihat'); setParam(param, { replace: true }); }} ubah={(m) => setForm(m)} batas={batasIni} />
+      <DetailMitra id={lihatId} tutup={() => { param.delete('lihat'); setParam(param, { replace: true }); }} ubah={(m) => setForm(m)} />
     </div>
   );
 }
@@ -211,8 +211,10 @@ function ImporMitra({ buka, tutup }: { buka: boolean; tutup: () => void }) {
 type DataDetail = {
   mitra: Mitra;
   tugas: { id: number; kegiatan_id: number; kegiatan: string; bulan_honor: string; satuan: string; peran: string; volume: number; tarif: number; honor: number; tanggal_mulai: string; tanggal_selesai: string }[];
+  sbml: Record<string, Record<string, number>>;
+  ambang: number;
 };
-function DetailMitra({ id, tutup, ubah, batas }: { id: number | null; tutup: () => void; ubah: (m: Mitra) => void; batas: number | null }) {
+function DetailMitra({ id, tutup, ubah }: { id: number | null; tutup: () => void; ubah: (m: Mitra) => void }) {
   const { data } = useQuery({ queryKey: ['mitra-detail', id], queryFn: () => api.get<DataDetail>(`/mitra/${id}`), enabled: !!id });
   const perBulan = useMemo(() => {
     const g = new Map<string, DataDetail['tugas']>();
@@ -264,13 +266,32 @@ function DetailMitra({ id, tutup, ubah, batas }: { id: number | null; tutup: () 
               <div className="space-y-4">
                 {perBulan.map(([b, tg], i) => {
                   const sub = tg.reduce((s, t) => s + t.honor, 0);
+                  const sbmlTahun = data?.sbml[b.slice(0, 4)] ?? {};
+                  const per = jumlahPerPeran(tg);
+                  const terburuk = statusTerburuk(per, sbmlTahun, data?.ambang ?? 80);
                   return (
                     <motion.div key={b} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="rounded-2xl border border-stone-100 p-4">
                       <div className="mb-2 flex items-center justify-between">
                         <Link to={`/rekap?bulan=${b}`} className="font-semibold text-stone-800 hover:text-brand-700">{labelBulan(b)}</Link>
-                        <span className={cx('angka text-sm font-bold', batas && sub > batas ? 'text-rose-600' : 'text-stone-700')}>{rupiah(sub)}</span>
+                        <span className={cx('angka text-sm font-bold', terburuk.status === 'lewat' ? 'text-rose-600' : 'text-stone-700')}>{rupiah(sub)}</span>
                       </div>
-                      <Batang nilai={sub} maks={batas} className="mb-3" />
+                      <div className="mb-3 space-y-1.5">
+                        {Object.entries(per).map(([p, v]) => {
+                          const bts = sbmlTahun[p];
+                          const st = statusSbml(v, bts, data?.ambang ?? 80);
+                          return (
+                            <div key={p}>
+                              <div className="flex justify-between text-[11px]">
+                                <span className="font-semibold text-stone-500">{p}</span>
+                                <span className={cx('angka', st === 'lewat' ? 'font-semibold text-rose-600' : st === 'dekat' ? 'font-semibold text-amber-600' : 'text-stone-400')}>
+                                  {rupiah(v)}{bts ? ` / SBML ${rupiah(bts)} (${persen(v, bts)}%)` : ' · SBML belum diatur'}
+                                </span>
+                              </div>
+                              <Batang nilai={v} maks={bts} ambang={data?.ambang} className="mt-0.5" />
+                            </div>
+                          );
+                        })}
+                      </div>
                       <ul className="space-y-1.5">
                         {tg.map((t) => (
                           <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
