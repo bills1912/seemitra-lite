@@ -374,7 +374,7 @@ export function KepalaHalaman({ judul, sub, aksi, kembali }: { judul: ReactNode;
         <h1 className="text-2xl font-extrabold tracking-tight text-stone-900 sm:text-[28px]">{judul}</h1>
         {sub && <p className="mt-1 text-[15px] text-stone-500">{sub}</p>}
       </div>
-      {aksi && <div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:justify-end">{aksi}</div>}
+      {aksi && <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">{aksi}</div>}
     </div>
   );
 }
