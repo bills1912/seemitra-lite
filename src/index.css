@@ -25,10 +25,12 @@ body { @apply bg-kanvas text-stone-800 antialiased; }
 /* angka tabular agar kolom rupiah rapi */
 .angka { font-variant-numeric: tabular-nums; }
 
-/* input dasar */
+/* input dasar (di layer components agar bisa ditimpa kelas utilitas seperti pl-10) */
+@layer components {
 .input {
   @apply w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-[15px] text-stone-800 outline-none transition
     placeholder:text-stone-400 hover:border-stone-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-100 disabled:bg-stone-50;
+}
 }
 .scroll-tipis { scrollbar-width: thin; scrollbar-color: #d6d3d1 transparent; }
 input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }

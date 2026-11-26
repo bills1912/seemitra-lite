@@ -78,8 +78,33 @@ export function jelaskanGalatTemplate(e: unknown): string {
   return daftar.length ? 'Template bermasalah: ' + daftar.slice(0, 3).join(' | ') : `Template bermasalah: ${err.message}`;
 }
 
-export function ujiTemplate(berkas: Buffer) {
-  isiTemplate(berkas, { mitra: [{ tugas: [{}] }] });
+/** Memeriksa template sebelum dipakai: penanda harus utuh dan dikenal. */
+export function ujiTemplate(berkas: Buffer, jenis: JenisTemplate) {
+  const zip = new PizZip(berkas);
+  const dikenal = new Set(['mitra', 'tugas']);
+  for (const k of [...Object.keys(PENANDA.umum), ...Object.keys(PENANDA[jenis])]) if (!k.includes('…')) dikenal.add(k);
+  const masalah: string[] = [];
+  for (const nama of Object.keys(zip.files).filter((f) => /^word\/(document|header\d*|footer\d*)\.xml$/.test(f))) {
+    const teks = zip.file(nama)!.asText().replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '');
+    let i = teks.indexOf('${');
+    while (i >= 0) {
+      const akhir = teks.indexOf('}', i);
+      const isi = akhir < 0 ? teks.slice(i + 2, i + 30) : teks.slice(i + 2, akhir);
+      const bersih = isi.replace(/^[#/]/, '');
+      if (akhir < 0 || isi.includes('${') || isi.includes('\n') || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(bersih)) {
+        masalah.push(`penanda "\${${isi.slice(0, 25)}…" tidak ditutup dengan "}" atau berisi karakter tidak sah`);
+      } else if (!dikenal.has(bersih)) {
+        masalah.push(`penanda "\${${isi}}" tidak dikenal (cek ejaan, huruf besar/kecil berpengaruh)`);
+      }
+      i = teks.indexOf('${', i + 2);
+    }
+  }
+  if (masalah.length) throw new GagalError('Template bermasalah: ' + [...new Set(masalah)].slice(0, 4).join('; ') + '.');
+  try {
+    isiTemplate(berkas, { mitra: [{ tugas: [{}] }] });
+  } catch (e) {
+    throw new GagalError(jelaskanGalatTemplate(e));
+  }
 }
 
 /** Nomor urut dokumen per mitra per bulan — tetap sama walau dokumen dibuat ulang. */

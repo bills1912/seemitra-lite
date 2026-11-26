@@ -6,7 +6,7 @@ import { db, ambilPengaturan, simpanPengaturan, catat, isiCadangan, pulihkanCada
 import { wajibAdmin, hashSandi, type Env } from '../auth.ts';
 import { GagalError } from '../util.ts';
 import { unduh } from './data.ts';
-import { fileTemplate, fileTemplateBawaan, JENIS_TEMPLATE, PENANDA, ujiTemplate, jelaskanGalatTemplate, type JenisTemplate } from './dokumen.ts';
+import { fileTemplate, fileTemplateBawaan, JENIS_TEMPLATE, PENANDA, ujiTemplate, type JenisTemplate } from './dokumen.ts';
 
 export const sistem = new Hono<Env>();
 
@@ -118,9 +118,9 @@ sistem.post('/template/:jenis', wajibAdmin, async (c) => {
   if (!file.name.toLowerCase().endsWith('.docx')) throw new GagalError('File harus berformat .docx (Word). Simpan ulang dokumen sebagai .docx.');
   const buf = Buffer.from(await file.arrayBuffer());
   try {
-    ujiTemplate(buf);
+    ujiTemplate(buf, j);
   } catch (e) {
-    throw new GagalError(jelaskanGalatTemplate(e));
+    throw e instanceof GagalError ? e : new GagalError('File tidak dapat dibaca sebagai dokumen Word (.docx).');
   }
   fs.writeFileSync(path.join(TEMPLATE_DIR, `${j}.docx`), buf);
   catat(c.get('pengguna').nama, 'Ganti template', j.toUpperCase());
