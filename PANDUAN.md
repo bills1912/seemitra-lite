@@ -47,7 +47,9 @@ Hampir semua hal yang biasa berubah dari tahun ke tahun bisa diatur langsung dar
 > Rekap Honor bisa dilihat per *bulan kegiatan* atau per *bulan pembayaran*.
 >
 > Kegiatan yang ada **setiap bulan** (mis. SHK): saat menambah kegiatan pilih **Bulanan sepanjang tahun**. Aplikasi membuat satu kegiatan per bulan;
-> di halaman kegiatan ada pilihan bulan dan tombol **Salin petugas ke bulan berikutnya**.
+> di halaman kegiatan ada pilihan bulan, tombol **Salin petugas ke bulan berikutnya**, dan **Hapus petugas di bulan-bulan…** bila salinan keliru (bisa diurungkan).
+>
+> Di tabel petugas, centang beberapa petugas (atau centang judul kolom untuk semua) lalu klik **Hapus** untuk mengeluarkan sekaligus.
 
 Salah hapus? Tekan **Urungkan** pada notifikasi yang muncul, atau buka tautan *"Lihat yang terhapus"* di bawah halaman Mitra/Kegiatan.
 

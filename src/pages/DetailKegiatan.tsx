@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  AlertTriangle, ArrowLeft, Check, ChevronDown, ClipboardList, Copy, Repeat, Download, FileSignature, Pencil, Trash2, Upload, UserPlus, Users, Wallet, Package, CalendarRange,
+  AlertTriangle, ArrowLeft, Check, ChevronDown, ClipboardList, Copy, Eraser, Repeat, Download, FileSignature, Pencil, Trash2, Upload, UserPlus, Users, Wallet, Package, CalendarRange,
 } from 'lucide-react';
 import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Kandidat, Kegiatan, Petugas } from '../lib/types';
@@ -14,6 +14,7 @@ import {
   AngkaHidup, AreaUnggah, Avatar, Batang, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Segmen, Tombol, TombolIkon, cx,
 } from '../components/ui';
 import { FormKegiatan, SalinKegiatan } from './Kegiatan';
+import { JendelaHapusBanyak } from '../components/HapusBanyak';
 import { DaftarAlokasiBulan, PopupRincianMitra, periodeKegiatan, useAlokasiBulan, type BarisAlokasi } from '../components/CekKegiatan';
 import { BULAN_PENDEK, LABEL_STATUS, angka, cocok, labelBulan, rentang, rupiah, statusKegiatan } from '../lib/format';
 import { lebihBuruk, persen, statusSbml, type PetaSbml, type StatusSbml } from '../lib/sbml';
@@ -32,6 +33,11 @@ export function DetailKegiatan() {
   const [impor, setImpor] = useState(false);
   const [q, setQ] = useState('');
   const [peran, setPeran] = useState('semua');
+  // centang beberapa petugas untuk dihapus sekaligus
+  const [terpilih, setTerpilih] = useState<Set<number>>(new Set());
+  const [konfirmHapus, setKonfirmHapus] = useState(false);
+  const [menghapus, setMenghapus] = useState(false);
+  useEffect(() => setTerpilih(new Set()), [id]);
 
   if (isLoading) return <Memuat />;
   if (error || !data) return <Kosong ikon={<AlertTriangle className="size-7" />} judul="Kegiatan tidak ditemukan" aksi={<Link to="/kegiatan"><Tombol>Kembali</Tombol></Link>} />;
@@ -49,6 +55,16 @@ export function DetailKegiatan() {
     segarkan();
     nav('/kegiatan');
     beritahu('sukses', 'Kegiatan dihapus.', { urungkan: async () => { await api.post(`/kegiatan/${k.id}/pulihkan`); segarkan(); nav(`/kegiatan/${k.id}`); } });
+  };
+  const hapusTerpilih = async () => {
+    setMenghapus(true);
+    try {
+      const r = await api.post<{ jumlah: number; rows: unknown[] }>('/petugas/hapus-banyak', { ids: [...terpilih] });
+      segarkan();
+      setKonfirmHapus(false);
+      setTerpilih(new Set());
+      beritahu('sukses', <><b>{r.jumlah}</b> petugas dikeluarkan dari kegiatan.</>, { urungkan: async () => { await api.post('/penugasan/pulihkan', { rows: r.rows }); segarkan(); } });
+    } catch (e) { beritahu('galat', (e as Error).message); } finally { setMenghapus(false); }
   };
   const hapusPetugas = async (p: Petugas) => {
     try {
@@ -104,6 +120,20 @@ export function DetailKegiatan() {
             <Tombol kecil ikon={<UserPlus className="size-3.5" />} onClick={() => setPilih(true)}>Tambah petugas</Tombol>
           </div>
         </div>
+        <AnimatePresence>
+          {terpilih.size > 0 && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+              <div className="flex flex-wrap items-center gap-2 border-b border-rose-100 bg-rose-50/70 px-4 py-2.5 text-sm">
+                <span className="font-semibold text-rose-800"><motion.b key={terpilih.size} initial={{ scale: 1.4 }} animate={{ scale: 1 }} className="inline-block">{terpilih.size}</motion.b> petugas dipilih</span>
+                {terpilih.size < tampil.length && <Tombol kecil varian="hantu" onClick={() => setTerpilih(new Set(tampil.map((x) => x.id)))}>Pilih semua ({tampil.length})</Tombol>}
+                <span className="ml-auto flex gap-2">
+                  <Tombol kecil varian="kedua" onClick={() => setTerpilih(new Set())}>Batal</Tombol>
+                  <Tombol kecil varian="bahaya" ikon={<Trash2 className="size-3.5" />} onClick={() => setKonfirmHapus(true)}>Hapus {terpilih.size} petugas</Tombol>
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {petugas.length === 0 ? (
           <Kosong ikon={<UserPlus className="size-7" />} judul="Belum ada petugas" pesan="Pilih mitra yang akan bertugas di kegiatan ini. Honor dihitung otomatis dari volume × tarif."
             aksi={<Tombol ikon={<UserPlus className="size-4" />} onClick={() => setPilih(true)}>Pilih mitra</Tombol>} />
@@ -112,18 +142,23 @@ export function DetailKegiatan() {
             <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="bg-stone-50/70 text-left text-xs font-bold uppercase tracking-wide text-stone-400">
-                  <th className="px-4 py-3">Mitra</th><th className="px-2 py-3">Peran</th><th className="px-2 py-3">Volume ({k.satuan})</th><th className="px-2 py-3">Tarif</th>
+                  <th className="w-10 py-3 pl-4">
+                    <Kotak aktif={tampil.length > 0 && tampil.every((x) => terpilih.has(x.id))}
+                      ubah={(v) => setTerpilih(v ? new Set([...terpilih, ...tampil.map((x) => x.id)]) : new Set([...terpilih].filter((i) => !tampil.some((x) => x.id === i))))} />
+                  </th>
+                  <th className="px-3 py-3">Mitra</th><th className="px-2 py-3">Peran</th><th className="px-2 py-3">Volume ({k.satuan})</th><th className="px-2 py-3">Tarif</th>
                   <th className="px-2 py-3 text-right">Honor</th><th className="px-4 py-3" title="Honor mitra untuk peran ini dari semua kegiatan di bulan yang sama, dibanding SBML peran tsb">Honor peran · {labelBulan(k.bulan_kegiatan)} vs SBML</th><th />
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
                 <AnimatePresence initial={false}>
-                  {tampil.map((p) => <BarisPetugas key={p.id} p={p} sbml={sbml} ambang={ambang} bulan={k.bulan_kegiatan} hapus={() => hapusPetugas(p)} />)}
+                  {tampil.map((p) => <BarisPetugas key={p.id} p={p} sbml={sbml} ambang={ambang} bulan={k.bulan_kegiatan} hapus={() => hapusPetugas(p)}
+                    dipilih={terpilih.has(p.id)} pilih={() => setTerpilih((s) => { const n = new Set(s); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; })} />)}
                 </AnimatePresence>
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-stone-100 font-bold text-stone-700">
-                  <td className="px-4 py-3" colSpan={2}>{tampil.length} petugas</td>
+                  <td className="py-3 pl-4" /><td className="px-3 py-3" colSpan={2}>{tampil.length} petugas</td>
                   <td className="angka px-2 py-3">{angka(tampil.reduce((s, p) => s + p.volume, 0))}</td><td />
                   <td className="angka px-2 py-3 text-right">{rupiah(tampil.reduce((s, p) => s + p.honor, 0))}</td><td colSpan={2} />
                 </tr>
@@ -134,6 +169,9 @@ export function DetailKegiatan() {
         <p className="border-t border-stone-100 bg-stone-50/50 px-4 py-2.5 text-xs text-stone-400">Klik angka volume atau tarif untuk mengubahnya langsung — tersimpan otomatis.</p>
       </Kartu>
 
+      <JendelaHapusBanyak buka={konfirmHapus} tutup={() => setKonfirmHapus(false)} jenis="petugas" memuat={menghapus} setuju={hapusTerpilih}
+        nama={petugas.filter((x) => terpilih.has(x.id)).map((x) => `${x.nama} · ${x.peran} · ${rupiah(x.honor)}`)}
+        keterangan={<>Petugas dikeluarkan dari <b>{k.nama}</b>{k.seri_id ? <> (hanya bulan {labelBulan(k.bulan_kegiatan)})</> : ''}. Bisa dikembalikan dengan tombol <b>Urungkan</b> setelah dihapus.</>} />
       <FormKegiatan data={ubah ? k : null} tutup={() => setUbah(false)} />
       <SalinKegiatan asal={salin ? k : null} tutup={() => setSalin(false)} />
       <PilihPetugas buka={pilih} tutup={() => setPilih(false)} kegiatan={k} />
@@ -149,6 +187,7 @@ function NavigasiSeri({ seri, ini, punyaPetugas }: { seri: Seri[]; ini: number; 
   const [denganVolume, setDenganVolume] = useState(true);
   const posisi = seri.findIndex((s) => s.id === ini);
   const sisa = seri.length - posisi - 1;
+  const [reset, setReset] = useState(false);
   const kirim = useAksi(() => api.post<{ jumlah: number; bulan: number }>(`/kegiatan/${ini}/salin-petugas-seri`, { salin_volume: denganVolume }), {
     sukses: (r) => (r.jumlah ? `${r.jumlah} penugasan disalin ke ${r.bulan} bulan berikutnya.` : 'Semua petugas sudah ada di bulan-bulan berikutnya.'), setelah: () => setSalin(false),
   });
@@ -156,9 +195,12 @@ function NavigasiSeri({ seri, ini, punyaPetugas }: { seri: Seri[]; ini: number; 
     <Kartu className="mb-5 p-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-bold text-stone-800"><Repeat className="size-4 text-sky-600" /> Kegiatan bulanan · {seri.length} bulan</div>
-        {punyaPetugas && sisa > 0 && (
-          <Tombol kecil varian="lembut" ikon={<Copy className="size-3.5" />} onClick={() => setSalin(true)}>Salin petugas ke {sisa} bulan berikutnya</Tombol>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <Tombol kecil varian="hantu" className="text-rose-600 hover:bg-rose-50 hover:text-rose-700" ikon={<Eraser className="size-3.5" />} onClick={() => setReset(true)}>Hapus petugas di bulan-bulan…</Tombol>
+          {punyaPetugas && sisa > 0 && (
+            <Tombol kecil varian="lembut" ikon={<Copy className="size-3.5" />} onClick={() => setSalin(true)}>Salin petugas ke {sisa} bulan berikutnya</Tombol>
+          )}
+        </div>
       </div>
       <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-12">
         {seri.map((s) => {
@@ -173,6 +215,7 @@ function NavigasiSeri({ seri, ini, punyaPetugas }: { seri: Seri[]; ini: number; 
           );
         })}
       </div>
+      <ResetPetugasSeri buka={reset} tutup={() => setReset(false)} ini={ini} sisa={sisa} total={seri.length} punyaPetugas={punyaPetugas} bulanIni={seri[posisi]?.bulan_kegiatan} />
       <Jendela buka={salin} tutup={() => setSalin(false)} judul="Salin petugas ke bulan berikutnya"
         sub={`Petugas bulan ini disalin ke ${sisa} bulan berikutnya. Petugas yang sudah ada di bulan tujuan tidak diubah.`}
         kaki={<><Tombol varian="kedua" onClick={() => setSalin(false)}>Batal</Tombol><Tombol memuat={kirim.isPending} ikon={<Copy className="size-4" />} onClick={() => kirim.mutate(undefined)}>Salin</Tombol></>}>
@@ -182,8 +225,64 @@ function NavigasiSeri({ seri, ini, punyaPetugas }: { seri: Seri[]; ini: number; 
   );
 }
 
+/** Popup: hapus petugas di beberapa bulan sekaligus (kegiatan bulanan) */
+function ResetPetugasSeri({ buka, tutup, ini, sisa, total, punyaPetugas, bulanIni }: {
+  buka: boolean; tutup: () => void; ini: number; sisa: number; total: number; punyaPetugas: boolean; bulanIni?: string;
+}) {
+  const { beritahu } = useUmpan();
+  const [cakupan, setCakupan] = useState<'berikutnya' | 'semua'>(sisa > 0 ? 'berikutnya' : 'semua');
+  const [hanyaSama, setHanyaSama] = useState(punyaPetugas);
+  const [paham, setPaham] = useState(false);
+  const [proses, setProses] = useState(false);
+  useEffect(() => { if (buka) { setCakupan(sisa > 0 ? 'berikutnya' : 'semua'); setHanyaSama(punyaPetugas); setPaham(false); } }, [buka]); // eslint-disable-line
+  const opsi = { cakupan, hanya_sama: hanyaSama && punyaPetugas };
+  const { data: pratinjau, isFetching } = useQuery({
+    queryKey: ['pratinjau-hapus-seri', ini, opsi.cakupan, opsi.hanya_sama],
+    queryFn: () => api.post<{ jumlah: number; bulan: number }>(`/kegiatan/${ini}/hapus-petugas-seri`, { ...opsi, pratinjau: true }),
+    enabled: buka,
+  });
+  const hapus = async () => {
+    setProses(true);
+    try {
+      const r = await api.post<{ jumlah: number; bulan: number; rows: unknown[] }>(`/kegiatan/${ini}/hapus-petugas-seri`, opsi);
+      segarkan();
+      tutup();
+      beritahu('sukses', <><b>{r.jumlah}</b> penugasan dihapus dari {r.bulan} bulan.</>, { urungkan: async () => { await api.post('/penugasan/pulihkan', { rows: r.rows }); segarkan(); } });
+    } catch (e) { beritahu('galat', (e as Error).message); } finally { setProses(false); }
+  };
+  const jumlah = pratinjau?.jumlah ?? 0;
+  return (
+    <Jendela buka={buka} tutup={tutup} judul="Hapus petugas di bulan-bulan" sub="Untuk membatalkan salinan yang keliru atau mengosongkan petugas kegiatan bulanan."
+      kaki={<>
+        <Tombol varian="kedua" onClick={tutup}>Batal</Tombol>
+        <Tombol varian="bahaya" disabled={!paham || !jumlah || isFetching} memuat={proses} ikon={<Trash2 className="size-4" />} onClick={hapus}>Hapus {jumlah} penugasan</Tombol>
+      </>}>
+      <div className="space-y-4">
+        <Kolom label="Bulan yang dihapus">
+          <Segmen id="cakupan-hapus" nilai={cakupan} ubah={(v) => setCakupan(v)} opsi={[
+            ...(sisa > 0 ? [{ nilai: 'berikutnya' as const, label: `Bulan berikutnya (${sisa})` }] : []),
+            { nilai: 'semua' as const, label: `Semua bulan (${total}, termasuk ${bulanIni ? labelBulan(bulanIni) : 'bulan ini'})` },
+          ]} />
+        </Kolom>
+        {punyaPetugas && (
+          <div className="rounded-xl bg-stone-50 p-3">
+            <Kotak aktif={hanyaSama} ubah={setHanyaSama} label={<span className="text-sm">Hanya mitra & peran yang <b>sama dengan bulan ini</b> (membatalkan hasil salin). Jika tidak dicentang, <b>semua</b> petugas di bulan-bulan tersebut dihapus.</span>} />
+          </div>
+        )}
+        <motion.div key={`${jumlah}-${pratinjau?.bulan}`} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }}
+          className={cx('rounded-2xl p-4 text-sm', jumlah ? 'bg-rose-50 text-rose-900' : 'bg-stone-50 text-stone-500')}>
+          {isFetching ? 'Menghitung…' : jumlah ? <>Akan dihapus: <b>{jumlah} penugasan</b> di <b>{pratinjau?.bulan} bulan</b>. Mitranya tetap ada di daftar Mitra.</> : 'Tidak ada penugasan yang cocok untuk dihapus.'}
+        </motion.div>
+        <div className="rounded-xl border border-stone-200 p-3">
+          <Kotak aktif={paham} ubah={setPaham} label={<span className="text-sm">Saya mengerti penugasan di atas akan dihapus. Bisa dikembalikan dengan tombol Urungkan sesaat setelah dihapus.</span>} />
+        </div>
+      </div>
+    </Jendela>
+  );
+}
+
 /* ---------------------------- Satu baris petugas dengan isian langsung ---------------------------- */
-function BarisPetugas({ p, sbml, ambang, bulan, hapus }: { p: Petugas; sbml: PetaSbml; ambang: number; bulan: string; hapus: () => void }) {
+function BarisPetugas({ p, sbml, ambang, bulan, hapus, dipilih, pilih }: { p: Petugas; sbml: PetaSbml; ambang: number; bulan: string; hapus: () => void; dipilih: boolean; pilih: () => void }) {
   const { data: atur } = usePengaturan();
   const { konfirmasi } = useUmpan();
   const [tersimpan, setTersimpan] = useState(false);
@@ -222,8 +321,9 @@ function BarisPetugas({ p, sbml, ambang, bulan, hapus }: { p: Petugas; sbml: Pet
   };
 
   return (
-    <motion.tr layout initial={{ opacity: 0, backgroundColor: '#ecfdf5' }} animate={{ opacity: 1, backgroundColor: 'rgba(255,255,255,0)' }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.4 }} className="group">
-      <td className="px-4 py-2.5">
+    <motion.tr layout initial={{ opacity: 0, backgroundColor: '#ecfdf5' }} animate={{ opacity: 1, backgroundColor: 'rgba(255,255,255,0)' }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.4 }} className={cx('group', dipilih && 'bg-rose-50/50')}>
+      <td className="py-2.5 pl-4"><Kotak aktif={dipilih} ubah={pilih} /></td>
+      <td className="px-3 py-2.5">
         <div className="flex items-center gap-3">
           <Avatar nama={p.nama} />
           <div className="min-w-0">

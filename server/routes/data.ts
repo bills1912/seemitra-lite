@@ -467,6 +467,63 @@ data.post('/kegiatan/:id/salin-petugas-seri', async (c) => {
   return c.json({ jumlah, bulan: tujuan.length });
 });
 
+/**
+ * Hapus petugas di bulan-bulan lain dalam seri kegiatan bulanan (mis. salah saat menyalin).
+ * cakupan: 'berikutnya' = bulan setelah bulan ini · 'semua' = semua bulan termasuk bulan ini.
+ * hanya_sama: hanya mitra+peran yang juga ada di bulan ini (membatalkan hasil salin).
+ * pratinjau: hanya menghitung, tidak menghapus.
+ */
+data.post('/kegiatan/:id/hapus-petugas-seri', async (c) => {
+  const id = Number(c.req.param('id'));
+  const b = (await c.req.json()) as { cakupan?: string; hanya_sama?: boolean; pratinjau?: boolean };
+  const k = db.prepare('SELECT seri_id, tanggal_mulai, nama FROM kegiatan WHERE id = ?').get(id) as { seri_id: number | null; tanggal_mulai: string; nama: string } | undefined;
+  if (!k?.seri_id) throw new GagalError('Kegiatan ini bukan kegiatan bulanan.');
+  const semua = b.cakupan === 'semua';
+  const tujuan = (db.prepare(`SELECT id FROM kegiatan WHERE seri_id = ? AND dihapus IS NULL ${semua ? '' : 'AND tanggal_mulai > ?'}`)
+    .all(...(semua ? [k.seri_id] : [k.seri_id, k.tanggal_mulai])) as { id: number }[]).map((r) => r.id);
+  if (!tujuan.length) return c.json({ jumlah: 0, bulan: 0, rows: [] });
+  const syarat = `kegiatan_id IN (${tujuan.map(() => '?').join(',')})` +
+    (b.hanya_sama ? ' AND EXISTS (SELECT 1 FROM penugasan s WHERE s.kegiatan_id = ? AND s.mitra_id = penugasan.mitra_id AND s.peran = penugasan.peran)' : '');
+  const param = b.hanya_sama ? [...tujuan, id] : tujuan;
+  const rows = db.prepare(`SELECT kegiatan_id, mitra_id, peran, volume, tarif, catatan, dibuat_oleh FROM penugasan WHERE ${syarat}`).all(...param) as Record<string, unknown>[];
+  const bulan = new Set(rows.map((r) => r.kegiatan_id)).size;
+  if (b.pratinjau) return c.json({ jumlah: rows.length, bulan });
+  db.prepare(`DELETE FROM penugasan WHERE ${syarat}`).run(...param);
+  catat(c.get('pengguna').nama, 'Hapus petugas di bulan-bulan', `${k.nama}: ${rows.length} penugasan di ${bulan} bulan`);
+  return c.json({ jumlah: rows.length, bulan, rows });
+});
+
+/** Hapus beberapa penugasan sekaligus; baris yang dihapus dikirim balik agar bisa diurungkan. */
+data.post('/petugas/hapus-banyak', async (c) => {
+  const ids = daftarIdPenugasan((await c.req.json()).ids);
+  const tanda = ids.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT kegiatan_id, mitra_id, peran, volume, tarif, catatan, dibuat_oleh FROM penugasan WHERE id IN (${tanda})`).all(...ids);
+  db.prepare(`DELETE FROM penugasan WHERE id IN (${tanda})`).run(...ids);
+  catat(c.get('pengguna').nama, 'Hapus beberapa petugas', `${rows.length} penugasan`);
+  return c.json({ jumlah: rows.length, rows });
+});
+
+/** Mengembalikan penugasan yang terhapus (tombol Urungkan). */
+data.post('/penugasan/pulihkan', async (c) => {
+  const { rows } = (await c.req.json()) as { rows: Record<string, unknown>[] };
+  if (!Array.isArray(rows) || !rows.length) throw new GagalError('Tidak ada data untuk dipulihkan.');
+  let n = 0;
+  transaksi(() => {
+    const st = db.prepare('INSERT OR IGNORE INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif, catatan, dibuat_oleh) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    for (const r of rows) {
+      n += Number(st.run(Number(r.kegiatan_id), Number(r.mitra_id), String(r.peran), Number(r.volume ?? 0), Number(r.tarif ?? 0),
+        (r.catatan as string) ?? null, (r.dibuat_oleh as string) ?? null).changes);
+    }
+  });
+  return c.json({ jumlah: n });
+});
+
+const daftarIdPenugasan = (v: unknown) => {
+  const ids = Array.isArray(v) ? [...new Set(v.map(Number).filter((x) => Number.isInteger(x) && x > 0))] : [];
+  if (!ids.length) throw new GagalError('Belum ada petugas yang dipilih.');
+  return ids;
+};
+
 /* =============================== PENUGASAN =============================== */
 type ItemTugas = { mitra_id: number; peran: string; volume?: number; tarif?: number; catatan?: string };
 
