@@ -18,4 +18,5 @@ COPY --from=bangun /app/dist ./dist
 COPY server ./server
 COPY templates ./templates
 EXPOSE 3000
-CMD ["npm", "start"]
+# Jalankan node langsung (bukan lewat npm) agar server berhenti dengan rapi saat Railway memperbarui aplikasi
+CMD ["node", "--experimental-strip-types", "--disable-warning=ExperimentalWarning", "server/index.ts"]
