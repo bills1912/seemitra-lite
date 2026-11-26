@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
@@ -13,11 +13,12 @@ import { jumlahPerPeran, persen, statusSbml, statusTerburuk } from '../lib/sbml'
 import { useUmpan } from '../components/umpan';
 import { Pilihan, IsianSaran } from '../components/pemilih';
 import {
-  AreaUnggah, Avatar, Batang, Kotak, Laci as LaciDetail, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, KotakCari, Lencana, Masukan, Memuat, Saklar, Segmen, Tombol, TombolIkon, cx,
+  AreaUnggah, Avatar, Batang, Kotak, Laci as LaciDetail, Paginasi, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, KotakCari, Lencana, Masukan, Memuat, Saklar, Segmen, Tombol, TombolIkon, cx,
 } from '../components/ui';
 import { bulanIni, cocok, labelBulan, rupiah, tanggal } from '../lib/format';
 
-const PER_HALAMAN = 60;
+/** Jumlah mitra per halaman daftar */
+const PER_HALAMAN = 10;
 
 export function HalamanMitra() {
   const [param, setParam] = useSearchParams();
@@ -25,7 +26,7 @@ export function HalamanMitra() {
   const [status, setStatus] = useState<'semua' | 'aktif' | 'nonaktif'>('aktif');
   const [kec, setKec] = useState('');
   const [sampah, setSampah] = useState(false);
-  const [batas, setBatas] = useState(PER_HALAMAN);
+  const [halaman, setHalaman] = useState(1);
   const [form, setForm] = useState<Partial<Mitra> | null>(null);
   const [impor, setImpor] = useState(false);
   // mode pilih banyak (khusus admin)
@@ -50,7 +51,12 @@ export function HalamanMitra() {
   const tersaring = useMemo(() => (data ?? []).filter((m) =>
     (sampah || status === 'semua' || m.status === status) && (!kec || m.kecamatan === kec) &&
     (!q || cocok(`${m.nama} ${m.sobat_id ?? ''} ${m.nik ?? ''} ${m.desa ?? ''} ${m.no_hp ?? ''}`, q))), [data, status, kec, q, sampah]);
-  useEffect(() => setBatas(PER_HALAMAN), [q, status, kec, sampah]);
+  useEffect(() => setHalaman(1), [q, status, kec, sampah]);
+  const jumlahHalaman = Math.max(1, Math.ceil(tersaring.length / PER_HALAMAN));
+  const hal = Math.min(halaman, jumlahHalaman);
+  const tampil = tersaring.slice((hal - 1) * PER_HALAMAN, hal * PER_HALAMAN);
+  const kePuncak = useRef<HTMLDivElement>(null);
+  const gantiHalaman = (h: number) => { setHalaman(h); kePuncak.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
   const hitung = (s: string) => (data ?? []).filter((m) => s === 'semua' || m.status === s).length;
 
@@ -103,13 +109,15 @@ export function HalamanMitra() {
             aksi={!data?.length && !sampah && <div className="flex gap-2"><Tombol varian="kedua" onClick={() => setImpor(true)} ikon={<Upload className="size-4" />}>Impor Excel</Tombol><Tombol onClick={() => setForm({ status: 'aktif' })} ikon={<Plus className="size-4" />}>Tambah Mitra</Tombol></div>} />
         </Kartu>
       ) : (
+        <>
+        <div ref={kePuncak} className="scroll-mt-24" />
         <Kartu className="overflow-hidden">
           <div className="hidden grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)_88px] gap-4 border-b border-stone-100 bg-stone-50/70 px-5 py-3 text-xs font-bold uppercase tracking-wide text-stone-400 md:grid">
             <span>Mitra</span><span>Wilayah</span><span>Riwayat</span><span>Honor {labelBulan(bulanIni())}</span><span />
           </div>
           <ul className="divide-y divide-stone-100">
             <AnimatePresence initial={false}>
-              {tersaring.slice(0, batas).map((m, i) => (
+              {tampil.map((m, i) => (
                 <motion.li key={m.id} layout="position" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0, transition: { delay: Math.min(i, 15) * 0.02 } }} exit={{ opacity: 0, x: -30, height: 0 }}
                   onClick={() => (modePilih ? balikPilih(m.id) : !sampah && setParam({ lihat: String(m.id) }))}
                   className={cx(modePilih && terpilih.has(m.id) && 'bg-rose-50/60', 'group grid cursor-pointer grid-cols-[1fr_auto] items-center gap-4 px-5 py-3.5 transition-colors hover:bg-brand-50/40 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)_88px]', sampah && 'cursor-default')}>
@@ -146,12 +154,9 @@ export function HalamanMitra() {
               ))}
             </AnimatePresence>
           </ul>
-          {tersaring.length > batas && (
-            <div className="border-t border-stone-100 p-3 text-center">
-              <Tombol varian="hantu" onClick={() => setBatas(batas + PER_HALAMAN)}>Tampilkan lebih banyak ({tersaring.length - batas} lagi)</Tombol>
-            </div>
-          )}
+          <Paginasi halaman={hal} total={tersaring.length} perHalaman={PER_HALAMAN} ubah={gantiHalaman} className="border-t border-stone-100 px-4 py-3 sm:px-5" />
         </Kartu>
+        </>
       )}
       {!sampah && <button onClick={() => setSampah(true)} className="mt-4 flex items-center gap-1.5 text-sm font-medium text-stone-400 hover:text-stone-600"><Trash2 className="size-4" /> Lihat mitra yang terhapus</button>}
 
