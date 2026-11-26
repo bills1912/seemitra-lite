@@ -5,7 +5,7 @@ import { Hono, type Context } from 'hono';
 import crypto from 'node:crypto';
 import { db, catat, transaksi, ambilPengaturan } from '../db.ts';
 import type { Env } from '../auth.ts';
-import { GagalError, labelBulan } from '../util.ts';
+import { GagalError, isiNomor, labelBulan } from '../util.ts';
 import { bacaExcel, buatExcel } from '../excel.ts';
 
 export const data = new Hono<Env>();
@@ -348,10 +348,10 @@ data.post('/kegiatan/:id/salin', async (c) => {
     const nid = Number(r.lastInsertRowid);
     if (b.salin_petugas) {
       db.prepare(
-        `INSERT INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif)
-         SELECT ?, p.mitra_id, p.peran, ${b.salin_volume ? 'p.volume' : '0'}, p.tarif FROM penugasan p
+        `INSERT INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif, dibuat_oleh)
+         SELECT ?, p.mitra_id, p.peran, ${b.salin_volume ? 'p.volume' : '0'}, p.tarif, ? FROM penugasan p
          JOIN mitra m ON m.id = p.mitra_id WHERE p.kegiatan_id = ? AND m.dihapus IS NULL`,
-      ).run(nid, id);
+      ).run(nid, c.get('pengguna').nama, id);
     }
     return nid;
   });
@@ -371,12 +371,13 @@ data.post('/kegiatan/:id/petugas', async (c) => {
   const tarif = JSON.parse(k.tarif || '{}') as Record<string, number>;
   transaksi(() => {
     const st = db.prepare(
-      `INSERT INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif, catatan) VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif, catatan, dibuat_oleh) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(kegiatan_id, mitra_id, peran) DO UPDATE SET volume = excluded.volume, tarif = excluded.tarif, catatan = excluded.catatan`,
     );
+    const oleh = c.get('pengguna').nama;
     for (const it of items) {
       if (!it.peran) throw new GagalError('Peran petugas wajib dipilih.');
-      st.run(id, it.mitra_id, it.peran, Number(it.volume ?? 0), Number(it.tarif ?? tarif[it.peran] ?? 0), teks(it.catatan));
+      st.run(id, it.mitra_id, it.peran, Number(it.volume ?? 0), Number(it.tarif ?? tarif[it.peran] ?? 0), teks(it.catatan), oleh);
     }
   });
   catat(c.get('pengguna').nama, 'Tambah petugas', `${items.length} mitra → ${k.nama}`);
@@ -431,9 +432,9 @@ data.post('/kegiatan/:id/petugas-impor', async (c) => {
       if (!m) { tidakKetemu.push(r.nama || r.sobat_id || '(tanpa nama)'); continue; }
       const peran = r.peran || peranAwal;
       db.prepare(
-        `INSERT INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif) VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif, dibuat_oleh) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(kegiatan_id, mitra_id, peran) DO UPDATE SET volume = excluded.volume`,
-      ).run(id, m.id, peran, Number(String(r.volume || '0').replace(',', '.')) || 0, tarif[peran] ?? 0);
+      ).run(id, m.id, peran, Number(String(r.volume || '0').replace(',', '.')) || 0, tarif[peran] ?? 0, c.get('pengguna').nama);
       masuk++;
     }
   });
@@ -463,6 +464,32 @@ data.get('/kegiatan/:id/ekspor', async (c) => {
     `${k.nama} — honor ${labelBulan(k.bulan_honor)}`,
   );
   return unduh(c, buf, `Petugas ${k.nama}.xlsx`);
+});
+
+/**
+ * Daftar seluruh penugasan mitra pada satu BULAN KEGIATAN (bulan honor) — untuk tombol "Cek kegiatan mitra".
+ * Dipakai agar beberapa pegawai yang mengisi kegiatan berbeda bisa melihat mitra sudah dialokasikan di mana saja.
+ */
+data.get('/alokasi-bulan', (c) => {
+  const bulan = c.req.query('bulan') ?? '';
+  if (!/^\d{4}-\d{2}$/.test(bulan)) throw new GagalError('Bulan tidak valid.');
+  const rows = db
+    .prepare(
+      `SELECT p.id, p.mitra_id, m.nama, m.sobat_id, k.id AS kegiatan_id, k.nama AS kegiatan, k.tanggal_mulai, k.tanggal_selesai,
+              k.satuan, p.peran, p.volume, p.tarif, (p.volume * p.tarif) AS honor, p.dibuat_oleh, p.dibuat
+       FROM penugasan p JOIN kegiatan k ON k.id = p.kegiatan_id JOIN mitra m ON m.id = p.mitra_id
+       WHERE k.dihapus IS NULL AND m.dihapus IS NULL AND k.bulan_honor = ?
+       ORDER BY m.nama COLLATE NOCASE, k.tanggal_mulai`,
+    )
+    .all(bulan);
+  const nomor = Object.fromEntries(
+    (db.prepare('SELECT mitra_id, urut FROM nomor_dokumen WHERE bulan = ?').all(bulan) as { mitra_id: number; urut: number }[]).map((r) => [r.mitra_id, r.urut]),
+  );
+  const p = ambilPengaturan();
+  return c.json({
+    bulan, rows, sbml: sbmlBulan(bulan), ambang: p.ambang_sbml,
+    nomor: Object.fromEntries(Object.entries(nomor).map(([id, u]) => [id, isiNomor(p.format_nomor_spk, u, bulan)])),
+  });
 });
 
 /* =============================== PENCARIAN CEPAT =============================== */

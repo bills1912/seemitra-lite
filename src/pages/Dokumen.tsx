@@ -12,7 +12,10 @@ import { akhirBulan, bulanIni, cocok, labelBulan, rupiah } from '../lib/format';
 type Pratinjau = {
   bulan: string;
   spk: { tanggal_spk: string; tanggal_mulai: string; tanggal_selesai: string } | null;
-  mitra: { mitra_id: number; nama: string; total: number; jumlah_tugas: number; kegiatan: number[]; urut: number | null; nomor_spk: string | null }[];
+  mitra: {
+    mitra_id: number; nama: string; total: number; jumlah_tugas: number; kegiatan: number[]; urut: number | null;
+    nomor_spk: string | null; nomor_bast: string | null; tugas: { kegiatan_id: number; kegiatan: string; peran: string; honor: number }[];
+  }[];
 };
 
 export function Dokumen() {
@@ -33,6 +36,7 @@ export function Dokumen() {
   const [dipilih, setDipilih] = useState<Set<number>>(new Set());
   const [q, setQ] = useState('');
   const [proses, setProses] = useState<'spk' | 'bast' | null>(null);
+  const [tab, setTab] = useState<'spk' | 'bast'>(kegiatanAwal ? 'bast' : 'spk');
   const [selesaiDok, setSelesaiDok] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,15 +50,21 @@ export function Dokumen() {
   }, [data, bulan, mitraAwal]);
   useEffect(() => setKegiatan(kegiatanAwal ?? ''), [bulan, kegiatanAwal]);
 
-  const mitraTampil = useMemo(() => (data?.mitra ?? []).filter((m) => (!kegiatan || m.kegiatan.includes(Number(kegiatan))) && (!q || cocok(m.nama, q))), [data, kegiatan, q]);
-  const terpilih = mitraTampil.filter((m) => dipilih.has(m.mitra_id));
-  const semuaTerpilih = !!data && terpilih.length === mitraTampil.length;
+  // SPK: semua mitra bulan ini. BAST: hanya mitra pada kegiatan yang dipilih (atau semua).
+  const daftarSpk = data?.mitra ?? [];
+  const daftarBast = useMemo(() => (data?.mitra ?? []).filter((m) => !kegiatan || m.kegiatan.includes(Number(kegiatan))), [data, kegiatan]);
+  const daftarTab = tab === 'spk' ? daftarSpk : daftarBast;
+  const mitraTampil = daftarTab.filter((m) => !q || cocok(m.nama, q));
+  const terpilihSpk = daftarSpk.filter((m) => dipilih.has(m.mitra_id));
+  const terpilihBast = daftarBast.filter((m) => dipilih.has(m.mitra_id));
+  const semuaTerpilih = mitraTampil.length > 0 && mitraTampil.every((m) => dipilih.has(m.mitra_id));
+  const honorBast = (m: Pratinjau['mitra'][number]) => m.tugas.filter((t) => !kegiatan || t.kegiatan_id === Number(kegiatan)).reduce((s, t) => s + t.honor, 0);
 
   const buat = async (jenis: 'spk' | 'bast') => {
     setProses(jenis);
     try {
-      const ids = terpilih.map((m) => m.mitra_id);
-      const semua = ids.length === (data?.mitra.length ?? 0);
+      const ids = (jenis === 'spk' ? terpilihSpk : terpilihBast).map((m) => m.mitra_id);
+      const semua = jenis === 'spk' ? ids.length === daftarSpk.length : ids.length === daftarBast.length;
       const nama = jenis === 'spk'
         ? await unduhFile('/dokumen/spk', { bulan, tanggal_spk: tglSpk, tanggal_mulai: mulai, tanggal_selesai: selesai, mitra_ids: semua ? undefined : ids })
         : await unduhFile('/dokumen/bast', { bulan, tanggal_bast: tglBast, tanggal_spk: tglSpkBast || undefined, kegiatan_id: kegiatan ? Number(kegiatan) : undefined, mitra_ids: semua ? undefined : ids });
@@ -93,8 +103,8 @@ export function Dokumen() {
                 <Kolom label="Jangka waktu mulai"><PilihTanggal nilai={mulai} ubah={setMulai} /></Kolom>
                 <Kolom label="Jangka waktu selesai"><PilihTanggal nilai={selesai} min={mulai} ubah={setSelesai} /></Kolom>
               </div>
-              <Tombol className="mt-5 h-11 w-full" memuat={proses === 'spk'} disabled={!terpilih.length || !!proses} onClick={() => buat('spk')} ikon={<FileSignature className="size-4" />}>
-                Buat SPK untuk {terpilih.length} mitra
+              <Tombol className="mt-5 h-11 w-full" memuat={proses === 'spk'} disabled={!terpilihSpk.length || !!proses} onClick={() => buat('spk')} onMouseEnter={() => setTab('spk')} ikon={<FileSignature className="size-4" />}>
+                Buat SPK untuk {terpilihSpk.length} mitra
               </Tombol>
             </KartuDokumen>
 
@@ -104,11 +114,11 @@ export function Dokumen() {
                 <Kolom label="Tanggal BAST"><PilihTanggal nilai={tglBast} ubah={setTglBast} /></Kolom>
                 <Kolom label="Tanggal SPK terkait" petunjuk={data.spk ? 'otomatis dari SPK terakhir' : 'samakan dengan tanggal SPK'}><PilihTanggal nilai={tglSpkBast} ubah={setTglSpkBast} /></Kolom>
                 <Kolom label="Kegiatan">
-                  <Pilihan nilai={kegiatan} ubah={setKegiatan} kosong="Semua kegiatan" opsi={(rekap?.kegiatan ?? []).map((k) => ({ nilai: String(k.id), label: k.nama }))} />
+                  <Pilihan nilai={kegiatan} ubah={(v) => { setKegiatan(v); setTab('bast'); }} kosong="Semua kegiatan" opsi={(rekap?.kegiatan ?? []).map((k) => ({ nilai: String(k.id), label: k.nama }))} />
                 </Kolom>
               </div>
-              <Tombol className="mt-5 h-11 w-full" varian="utama" memuat={proses === 'bast'} disabled={!terpilih.length || !!proses || !tglSpkBast} onClick={() => buat('bast')} ikon={<FileCheck2 className="size-4" />}>
-                Buat BAST untuk {terpilih.length} mitra
+              <Tombol className="mt-5 h-11 w-full" varian="utama" memuat={proses === 'bast'} disabled={!terpilihBast.length || !!proses || !tglSpkBast} onClick={() => buat('bast')} onMouseEnter={() => setTab('bast')} ikon={<FileCheck2 className="size-4" />}>
+                Buat BAST untuk {terpilihBast.length} mitra
               </Tombol>
             </KartuDokumen>
 
@@ -123,12 +133,26 @@ export function Dokumen() {
           <Kartu className="flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden xl:sticky xl:top-8">
             <div className="border-b border-stone-100 p-4">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="flex items-center gap-2 font-bold text-stone-900"><Users className="size-4 text-brand-600" /> Mitra yang dibuatkan</h3>
+                <h3 className="flex items-center gap-2 font-bold text-stone-900"><Users className="size-4 text-brand-600" /> Pratinjau mitra</h3>
                 <Kotak aktif={semuaTerpilih} ubah={(v) => setDipilih(v ? new Set([...dipilih, ...mitraTampil.map((m) => m.mitra_id)]) : new Set([...dipilih].filter((id) => !mitraTampil.some((m) => m.mitra_id === id))))} label={<span className="text-xs font-semibold">Semua</span>} />
               </div>
+              <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
+                {(['spk', 'bast'] as const).map((t) => (
+                  <button key={t} type="button" onClick={() => setTab(t)}
+                    className={cx('relative rounded-lg py-1.5 text-sm font-bold transition-colors', tab === t ? 'text-stone-900' : 'text-stone-500 hover:text-stone-800')}>
+                    {tab === t && <motion.span layoutId="tab-pratinjau" transition={{ type: 'spring', stiffness: 420, damping: 32 }} className="absolute inset-0 rounded-lg bg-white shadow-sm" />}
+                    <span className="relative">{t.toUpperCase()} <span className="text-xs font-semibold text-stone-400">({t === 'spk' ? terpilihSpk.length : terpilihBast.length})</span></span>
+                  </button>
+                ))}
+              </div>
+              {tab === 'bast' && (
+                <p className="mb-2 text-xs text-stone-500">{kegiatan ? <>Kegiatan: <b>{rekap?.kegiatan.find((x) => String(x.id) === kegiatan)?.nama}</b></> : 'Semua kegiatan bulan ini'} · ubah di kartu BAST</p>
+              )}
               <KotakCari nilai={q} ubah={setQ} placeholder="Cari mitra…" />
             </div>
-            <ul className="scroll-tipis flex-1 divide-y divide-stone-50 overflow-y-auto">
+            <AnimatePresence mode="popLayout" initial={false}>
+            <motion.ul key={tab + kegiatan} initial={{ opacity: 0, x: tab === 'bast' ? 16 : -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+              className="scroll-tipis flex-1 divide-y divide-stone-50 overflow-y-auto">
               {mitraTampil.map((m) => {
                 const aktif = dipilih.has(m.mitra_id);
                 return (
@@ -139,14 +163,21 @@ export function Dokumen() {
                       <Avatar nama={m.nama} />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold text-stone-800">{m.nama}</div>
-                        <div className="truncate text-xs text-stone-400">{m.nomor_spk ? `No. ${m.nomor_spk}` : 'nomor baru'} · {m.jumlah_tugas} tugas</div>
+                        <div className="truncate text-xs text-stone-400">
+                          {tab === 'spk'
+                            ? <>{m.nomor_spk ? `No. ${m.nomor_spk}` : 'nomor baru'} · {m.jumlah_tugas} tugas</>
+                            : <>{m.nomor_bast ? `No. ${m.nomor_bast}` : 'nomor baru'} · {kegiatan ? m.tugas.find((t) => t.kegiatan_id === Number(kegiatan))?.peran : `${m.jumlah_tugas} tugas`}</>}
+                        </div>
                       </div>
-                      <span className="angka text-xs font-semibold text-stone-500">{rupiah(m.total)}</span>
+                      <span className="angka text-xs font-semibold text-stone-500">{rupiah(tab === 'spk' ? m.total : honorBast(m))}</span>
                     </button>
                   </li>
                 );
               })}
-            </ul>
+              {mitraTampil.length === 0 && <li className="px-4 py-8 text-center text-sm text-stone-400">Tidak ada mitra.</li>}
+            </motion.ul>
+            </AnimatePresence>
+            <p className="border-t border-stone-100 px-4 py-2 text-[11px] text-stone-400">Nomor urut sama untuk SPK & BAST, berulang dari 1 setiap bulan. "Nomor baru" diberikan saat dokumen dibuat.</p>
           </Kartu>
         </div>
       )}

@@ -97,6 +97,9 @@ const MIGRASI: string[] = [
     SELECT b.tahun, p.value, b.nominal FROM batas_honor b,
       json_each(COALESCE((SELECT json_extract(nilai, '$.daftar_peran') FROM pengaturan WHERE kunci = 'umum'), '["PPL","PML","Pengolahan"]')) p;
   `,
+  /* 4 — catat siapa yang mengentri penugasan (berguna bila beberapa pegawai mengisi kegiatan berbeda) */ `
+  ALTER TABLE penugasan ADD COLUMN dibuat_oleh TEXT;
+  `,
 ];
 
 function jalankanMigrasi() {

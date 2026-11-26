@@ -148,6 +148,8 @@ dokumen.get('/dokumen/pratinjau', (c) => {
       kegiatan: [...new Set(b.tugas.map((t) => t.kegiatan_id))],
       urut: nomor.get(b.mitra_id) ?? null,
       nomor_spk: nomor.has(b.mitra_id) ? isiNomor(p.format_nomor_spk, nomor.get(b.mitra_id)!, bulan) : null,
+      nomor_bast: nomor.has(b.mitra_id) ? isiNomor(p.format_nomor_bast, nomor.get(b.mitra_id)!, bulan) : null,
+      tugas: b.tugas.map((t) => ({ kegiatan_id: t.kegiatan_id, kegiatan: t.kegiatan, peran: t.peran, honor: t.honor })),
     })),
   });
 });

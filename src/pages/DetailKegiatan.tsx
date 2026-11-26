@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  AlertTriangle, ArrowLeft, Check, Copy, Download, FileSignature, Pencil, Trash2, Upload, UserPlus, Users, Wallet, Package, CalendarRange,
+  AlertTriangle, ArrowLeft, Check, ChevronDown, ClipboardList, Copy, Download, FileSignature, Pencil, Trash2, Upload, UserPlus, Users, Wallet, Package, CalendarRange,
 } from 'lucide-react';
 import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Kandidat, Kegiatan, Petugas } from '../lib/types';
@@ -14,6 +14,7 @@ import {
   AngkaHidup, AreaUnggah, Avatar, Batang, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Segmen, Tombol, TombolIkon, cx,
 } from '../components/ui';
 import { FormKegiatan, SalinKegiatan } from './Kegiatan';
+import { DaftarAlokasiBulan, RincianMitra, useAlokasiBulan, type BarisAlokasi } from '../components/CekKegiatan';
 import { LABEL_STATUS, angka, cocok, labelBulan, rentang, rupiah, statusKegiatan } from '../lib/format';
 import { lebihBuruk, persen, statusSbml, type PetaSbml, type StatusSbml } from '../lib/sbml';
 
@@ -250,10 +251,19 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
   const [disetujui, setDisetujui] = useState<Map<number, StatusSbml>>(new Map());
   const [q, setQ] = useState('');
   const [sembunyi, setSembunyi] = useState(true);
+  const [modeCek, setModeCek] = useState(false);
+  const [rinci, setRinci] = useState<number | null>(null);
+  // semua penugasan mitra di BULAN KEGIATAN ini (bukan bulan hari ini)
+  const { data: alokasi } = useAlokasiBulan(k.bulan_honor, buka);
+  const alokasiMitra = useMemo(() => {
+    const peta = new Map<number, BarisAlokasi[]>();
+    for (const r of alokasi?.rows ?? []) peta.set(r.mitra_id, [...(peta.get(r.mitra_id) ?? []), r]);
+    return peta;
+  }, [alokasi]);
   useEffect(() => {
     if (buka) {
       const p = peranAda[0] ?? atur?.daftar_peran[0] ?? 'PPL';
-      setPeran(p); setTarif(k.tarif[p] ?? 0); setVolume(0); setDipilih(new Set()); setDisetujui(new Map()); setQ('');
+      setPeran(p); setTarif(k.tarif[p] ?? 0); setVolume(0); setDipilih(new Set()); setDisetujui(new Map()); setQ(''); setModeCek(false); setRinci(null);
     }
   }, [buka]); // eslint-disable-line
   const gantiPeran = (p: string) => { setPeran(p); setTarif(k.tarif[p] ?? 0); setDisetujui(new Map()); };
@@ -341,12 +351,19 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
         <Kolom label="Tarif" petunjuk={honorBaru ? `Honor per orang ${rupiah(honorBaru)}` : 'dari tarif kegiatan'}><MasukanRupiah nilai={tarif} ubah={setTarif} /></Kolom>
       </div>
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <KotakCari autoFocus nilai={q} ubah={setQ} placeholder="Cari nama, SOBAT ID, atau wilayah…" className="flex-1" />
-        <Kotak aktif={sembunyi} ubah={setSembunyi} label={`Sembunyikan yang sudah jadi ${peran}`} />
+        <KotakCari autoFocus nilai={q} ubah={setQ} placeholder={modeCek ? 'Cari mitra atau nama kegiatan…' : 'Cari nama, SOBAT ID, atau wilayah…'} className="flex-1" />
+        <Tombol varian={modeCek ? 'utama' : 'lembut'} ikon={<ClipboardList className="size-4" />} onClick={() => setModeCek(!modeCek)}>
+          {modeCek ? 'Kembali memilih' : `Cek kegiatan mitra · ${labelBulan(k.bulan_honor)}`}
+        </Tombol>
       </div>
-      <div className="mb-2 flex items-center justify-between text-xs text-stone-500">
+      {modeCek ? (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <DaftarAlokasiBulan bulan={k.bulan_honor} q={q} kegiatanIni={k.id} />
+        </motion.div>
+      ) : <>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
+        <Kotak aktif={sembunyi} ubah={setSembunyi} label={<span className="text-xs">Sembunyikan yang sudah jadi {peran}</span>} />
         <button className="font-semibold text-brand-700 hover:underline" onClick={pilihSemua}>Pilih semua yang tampil ({daftar.length})</button>
-        <span className="hidden sm:inline">Kanan: honor {peran} {labelBulan(k.bulan_honor)}{honorBaru ? ' + kegiatan ini' : ''} / SBML</span>
         {dipilih.size > 0 && <button className="font-semibold hover:underline" onClick={() => setDipilih(new Set())}>Kosongkan pilihan</button>}
       </div>
       {!data ? <Memuat /> : daftar.length === 0 ? <p className="py-10 text-center text-sm text-stone-400">Tidak ada mitra aktif yang cocok. Tambahkan mitra di menu Mitra.</p> : (
@@ -356,8 +373,9 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
             const tampilHonor = sekarang(m) + (aktif ? honorBaru : 0);
             const st = statusSbml(tampilHonor, batas, ambang);
             return (
-              <motion.li key={m.id} layout="position">
-                <button onClick={() => balik(m)} className={cx('flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition', aktif ? 'border-brand-300 bg-brand-50/60' : 'border-transparent hover:bg-stone-50')}>
+              <motion.li key={m.id} layout="position" className={cx('rounded-xl border transition', aktif ? 'border-brand-300 bg-brand-50/60' : 'border-transparent hover:bg-stone-50')}>
+                <div className="flex items-center gap-2 pr-2">
+                <button onClick={() => balik(m)} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left">
                   <Kotak aktif={aktif} ubah={() => balik(m)} />
                   <Avatar nama={m.nama} />
                   <div className="min-w-0 flex-1">
@@ -377,11 +395,35 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
                     <Batang nilai={tampilHonor} maks={batas} ambang={ambang} className="ml-auto mt-1 w-28" />
                   </div>
                 </button>
+                {(() => {
+                  const n = alokasiMitra.get(m.id)?.length ?? 0;
+                  return (
+                    <button type="button" onClick={() => setRinci(rinci === m.id ? null : m.id)} title={`Cek kegiatan mitra di ${labelBulan(k.bulan_honor)}`}
+                      className={cx('flex w-28 shrink-0 items-center justify-end gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition',
+                        n ? 'text-sky-700 hover:bg-sky-50' : 'text-stone-300 hover:bg-stone-100 hover:text-stone-500')}>
+                      <ClipboardList className="size-3.5" />{n ? `${n} kegiatan` : 'kosong'}
+                      <motion.span animate={{ rotate: rinci === m.id ? 180 : 0 }}><ChevronDown className="size-3.5" /></motion.span>
+                    </button>
+                  );
+                })()}
+                </div>
+                <AnimatePresence initial={false}>
+                  {rinci === m.id && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                      <div className="px-3 pb-3 sm:pl-[4.25rem]">
+                        {alokasi && alokasiMitra.get(m.id)?.length
+                          ? <RincianMitra rows={alokasiMitra.get(m.id)!} data={alokasi} kegiatanIni={k.id} />
+                          : <p className="rounded-xl bg-stone-50 p-3 text-xs text-stone-500">Belum dialokasikan ke kegiatan apa pun pada {labelBulan(k.bulan_honor)}.</p>}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.li>
             );
           })}
         </ul>
       )}
+      </>}
     </Jendela>
   );
 }
