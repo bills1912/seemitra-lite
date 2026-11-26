@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   BookOpen, CalendarDays, CornerDownLeft, FileSignature, Home, LogOut, Menu, Plus, Search, Settings, Users, Wallet, X,
 } from 'lucide-react';
-import { api, queryClient } from '../lib/api';
+import { api } from '../lib/api';
 import type { Pengguna } from '../lib/types';
 import { Avatar, cx, pegas } from './ui';
 import { labelBulan } from '../lib/format';
@@ -34,10 +34,12 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
     return () => window.removeEventListener('keydown', h);
   }, []);
 
+  const [keluarProses, setKeluarProses] = useState(false);
   const keluar = async () => {
-    await api.post('/auth/keluar');
-    queryClient.clear();
-    queryClient.setQueryData(['saya'], { pengguna: null, perluSetup: false });
+    setKeluarProses(true);
+    try { await api.post('/auth/keluar'); } catch { /* tetap keluar walau jaringan bermasalah */ }
+    // Muat ulang halaman agar semua data di memori bersih dan langsung kembali ke halaman masuk.
+    window.location.replace('/');
   };
 
   const isiMenu = (
@@ -72,7 +74,7 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
           <div className="truncate text-sm font-bold text-stone-800">{pengguna.nama}</div>
           <div className="text-xs capitalize text-stone-400">{pengguna.peran}</div>
         </div>
-        <button onClick={keluar} title="Keluar" className="rounded-lg p-2 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"><LogOut className="size-4" /></button>
+        <button onClick={keluar} disabled={keluarProses} title="Keluar" className="rounded-lg p-2 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"><LogOut className="size-4" /></button>
       </div>
     </div>
   );

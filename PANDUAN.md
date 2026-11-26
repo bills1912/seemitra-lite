@@ -16,7 +16,7 @@ Hampir semua hal yang biasa berubah dari tahun ke tahun bisa diatur langsung dar
 | Format nomor SPK / BAST | **Pengaturan → Format nomor** |
 | Daftar peran (PPL, PML, …), satuan, jenis kegiatan | **Pengaturan → Peran & satuan** |
 | Isi kalimat, kop, tata letak SPK & BAST | **Pengaturan → Template dokumen** (edit di Microsoft Word) |
-| Menambah / menghapus akun pengguna, reset kata sandi | **Pengaturan → Pengguna** |
+| Menambah / menghapus akun pengguna, reset kata sandi | **Pengaturan → Pengguna**. Rekan juga bisa klik *Daftar di sini* di halaman masuk, lalu admin klik **Setujui** |
 | Mencadangkan / memulihkan data | **Pengaturan → Cadangan data** |
 | Melihat siapa mengubah apa | **Pengaturan → Riwayat aktivitas** |
 

@@ -44,7 +44,7 @@ export function penggunaDariSesi(c: Context): Pengguna | null {
   try {
     const { id, exp } = JSON.parse(Buffer.from(isi, 'base64url').toString());
     if (Date.now() > exp) return null;
-    return (db.prepare('SELECT id, username, nama, peran FROM pengguna WHERE id = ?').get(id) as Pengguna) ?? null;
+    return (db.prepare("SELECT id, username, nama, peran FROM pengguna WHERE id = ? AND status = 'aktif'").get(id) as Pengguna) ?? null;
   } catch {
     return null;
   }

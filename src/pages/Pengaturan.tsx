@@ -265,17 +265,24 @@ function TabPengguna({ saya }: { saya?: number }) {
   const { konfirmasi } = useUmpan();
   const simpan = useAksi((v: Partial<Pengguna> & { sandi?: string }) => (v.id ? api.put(`/pengguna/${v.id}`, v) : api.post('/pengguna', v)), { sukses: 'Pengguna disimpan.', setelah: () => setForm(null) });
   const hapus = useAksi((u: Pengguna) => api.del(`/pengguna/${u.id}`), { sukses: 'Pengguna dihapus.' });
+  const setujui = useAksi((u: Pengguna) => api.post(`/pengguna/${u.id}/setujui`), { sukses: (_, u) => `${u.nama} kini dapat masuk ke aplikasi.` });
   return (
-    <Panel judul="Pengguna aplikasi" ket={<><b>Admin</b> dapat mengubah semua pengaturan. <b>Operator</b> dapat mengelola mitra, kegiatan, honor, dan dokumen.</>}>
+    <Panel judul="Pengguna aplikasi" ket={<><b>Admin</b> dapat mengubah semua pengaturan. <b>Operator</b> dapat mengelola mitra, kegiatan, honor, dan dokumen. Orang yang mendaftar dari halaman masuk baru bisa masuk setelah Anda setujui di sini.</>}>
       <div className="mb-4 flex justify-end"><Tombol kecil ikon={<Plus className="size-4" />} onClick={() => setForm({ peran: 'operator' })}>Tambah pengguna</Tombol></div>
       <ul className="divide-y divide-stone-100">
         {data?.map((u) => (
           <li key={u.id} className="flex items-center gap-3 py-3">
             <Avatar nama={u.nama} />
             <div className="min-w-0 flex-1"><div className="font-semibold text-stone-800">{u.nama} {u.id === saya && <span className="text-xs text-stone-400">(Anda)</span>}</div><div className="text-xs text-stone-400">@{u.username}</div></div>
-            <Lencana warna={u.peran === 'admin' ? 'brand' : 'abu'}>{u.peran}</Lencana>
-            <TombolIkon label="Ubah" onClick={() => setForm(u)}><Pencil className="size-4" /></TombolIkon>
-            {u.id !== saya && <TombolIkon label="Hapus" onClick={async () => (await konfirmasi({ judul: `Hapus ${u.nama}?`, bahaya: true, tombol: 'Hapus' })) && hapus.mutate(u)}><Trash2 className="size-4" /></TombolIkon>}
+            {u.status === 'menunggu' ? <>
+              <Lencana warna="kuning" titik>Menunggu persetujuan</Lencana>
+              <Tombol kecil onClick={() => setujui.mutate(u)}>Setujui</Tombol>
+              <Tombol kecil varian="hantu" onClick={async () => (await konfirmasi({ judul: `Tolak pendaftaran ${u.nama}?`, pesan: 'Akun pendaftar akan dihapus.', bahaya: true, tombol: 'Tolak' })) && hapus.mutate(u)}>Tolak</Tombol>
+            </> : <>
+              <Lencana warna={u.peran === 'admin' ? 'brand' : 'abu'}>{u.peran}</Lencana>
+              <TombolIkon label="Ubah" onClick={() => setForm(u)}><Pencil className="size-4" /></TombolIkon>
+              {u.id !== saya && <TombolIkon label="Hapus" onClick={async () => (await konfirmasi({ judul: `Hapus ${u.nama}?`, bahaya: true, tombol: 'Hapus' })) && hapus.mutate(u)}><Trash2 className="size-4" /></TombolIkon>}
+            </>}
           </li>
         ))}
       </ul>

@@ -40,7 +40,7 @@ sistem.put('/batas-honor', wajibAdmin, async (c) => {
 });
 
 /* ---------- Pengguna ---------- */
-sistem.get('/pengguna', wajibAdmin, (c) => c.json(db.prepare('SELECT id, username, nama, peran, dibuat FROM pengguna ORDER BY nama').all()));
+sistem.get('/pengguna', wajibAdmin, (c) => c.json(db.prepare('SELECT id, username, nama, peran, status, dibuat FROM pengguna ORDER BY status DESC, nama').all()));
 sistem.post('/pengguna', wajibAdmin, async (c) => {
   const b = await c.req.json();
   if (!b.username || !b.nama || !b.sandi) throw new GagalError('Nama, username, dan kata sandi wajib diisi.');
@@ -59,10 +59,12 @@ sistem.put('/pengguna/:id', wajibAdmin, async (c) => {
   const b = await c.req.json();
   const peran = b.peran === 'admin' ? 'admin' : 'operator';
   if (peran !== 'admin') {
-    const sisa = (db.prepare("SELECT COUNT(*) n FROM pengguna WHERE peran = 'admin' AND id <> ?").get(id) as { n: number }).n;
+    const sisa = (db.prepare("SELECT COUNT(*) n FROM pengguna WHERE peran = 'admin' AND status = 'aktif' AND id <> ?").get(id) as { n: number }).n;
     if (!sisa) throw new GagalError('Harus ada minimal satu admin.');
   }
-  db.prepare('UPDATE pengguna SET nama = ?, peran = ? WHERE id = ?').run(String(b.nama).trim(), peran, id);
+  const status = b.status === 'menunggu' ? 'menunggu' : 'aktif';
+  if (id === c.get('pengguna').id && (status !== 'aktif' || peran !== 'admin')) throw new GagalError('Anda tidak dapat menonaktifkan atau menurunkan akun sendiri.');
+  db.prepare('UPDATE pengguna SET nama = ?, peran = ?, status = ? WHERE id = ?').run(String(b.nama).trim(), peran, status, id);
   if (b.sandi) {
     if (String(b.sandi).length < 6) throw new GagalError('Kata sandi minimal 6 karakter.');
     db.prepare('UPDATE pengguna SET password_hash = ? WHERE id = ?').run(hashSandi(b.sandi), id);
@@ -77,6 +79,13 @@ sistem.delete('/pengguna/:id', wajibAdmin, (c) => {
   if (!sisa) throw new GagalError('Harus ada minimal satu admin.');
   db.prepare('DELETE FROM pengguna WHERE id = ?').run(id);
   catat(c.get('pengguna').nama, 'Hapus pengguna', String(id));
+  return c.json({ ok: true });
+});
+sistem.post('/pengguna/:id/setujui', wajibAdmin, (c) => {
+  const id = Number(c.req.param('id'));
+  db.prepare("UPDATE pengguna SET status = 'aktif' WHERE id = ?").run(id);
+  const u = db.prepare('SELECT nama FROM pengguna WHERE id = ?').get(id) as { nama: string } | undefined;
+  catat(c.get('pengguna').nama, 'Setujui pendaftaran', u?.nama);
   return c.json({ ok: true });
 });
 /** Setiap pengguna boleh mengganti kata sandinya sendiri */

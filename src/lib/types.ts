@@ -1,4 +1,4 @@
-export type Pengguna = { id: number; username: string; nama: string; peran: 'admin' | 'operator'; dibuat?: string };
+export type Pengguna = { id: number; username: string; nama: string; peran: 'admin' | 'operator'; status?: 'aktif' | 'menunggu'; dibuat?: string };
 
 export type Mitra = {
   id: number; sobat_id: string | null; nama: string; nik: string | null; jenis_kelamin: string | null;

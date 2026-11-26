@@ -150,5 +150,9 @@ laporan.get('/beranda', (c) => {
   for (const k of tanpaVolume) perhatian.push({ jenis: 'peringatan', judul: `${k.n} petugas ${k.nama} belum ada volume/tarif`, detail: 'Honornya masih Rp0.', tautan: `/kegiatan/${k.id}` });
 
   const pengguna = c.get('pengguna');
+  if (pengguna.peran === 'admin') {
+    const n = satu("SELECT COUNT(*) n FROM pengguna WHERE status = 'menunggu'");
+    if (n) perhatian.unshift({ jenis: 'info', judul: `${n} pendaftar menunggu persetujuan`, detail: 'Setujui agar mereka bisa masuk ke aplikasi.', tautan: '/pengaturan?tab=pengguna' });
+  }
   return c.json({ hari, bulan, statistik, grafik, kegiatanAktif, perhatian, pengguna });
 });

@@ -85,6 +85,9 @@ const MIGRASI: string[] = [
   CREATE INDEX idx_penugasan_mitra ON penugasan(mitra_id);
   CREATE INDEX idx_kegiatan_bulan ON kegiatan(bulan_honor);
   `,
+  /* 2 — pendaftaran akun: akun baru menunggu persetujuan admin */ `
+  ALTER TABLE pengguna ADD COLUMN status TEXT NOT NULL DEFAULT 'aktif';
+  `,
 ];
 
 function jalankanMigrasi() {
