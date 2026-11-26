@@ -36,8 +36,8 @@ export function HalamanPengaturan() {
   return (
     <div>
       <KepalaHalaman judul="Pengaturan" sub={admin ? 'Semua yang biasanya berubah dari waktu ke waktu bisa diatur di sini — tanpa mengubah kode.' : 'Beberapa pengaturan hanya bisa diubah oleh admin.'} />
-      <div className="grid gap-6 lg:grid-cols-[230px_1fr]">
-        <nav className="scroll-tipis -mx-4 flex gap-1 overflow-x-auto px-4 lg:mx-0 lg:flex-col lg:px-0">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-6">
+        <nav className="scroll-tipis -mx-4 flex gap-1 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:flex-col lg:self-start lg:px-0 lg:pb-0 lg:sticky lg:top-8">
           {tabs.map((t) => (
             <button key={t.id} onClick={() => setParam({ tab: t.id }, { replace: true })}
               className={cx('relative flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors', tab === t.id ? 'text-brand-800' : 'text-stone-500 hover:bg-stone-100 hover:text-stone-800')}>
@@ -68,9 +68,9 @@ export function HalamanPengaturan() {
 function Panel({ judul, ket, children, kaki }: { judul: string; ket?: ReactNode; children: ReactNode; kaki?: ReactNode }) {
   return (
     <Kartu className="overflow-hidden">
-      <div className="border-b border-stone-100 px-6 py-5"><h2 className="font-bold text-stone-900">{judul}</h2>{ket && <p className="mt-0.5 text-sm text-stone-500">{ket}</p>}</div>
-      <div className="p-6">{children}</div>
-      {kaki && <div className="flex justify-end gap-2 border-t border-stone-100 bg-stone-50/60 px-6 py-4">{kaki}</div>}
+      <div className="border-b border-stone-100 px-4 py-4 sm:px-6 sm:py-5"><h2 className="font-bold text-stone-900">{judul}</h2>{ket && <p className="mt-0.5 text-sm text-stone-500">{ket}</p>}</div>
+      <div className="p-4 sm:p-6">{children}</div>
+      {kaki && <div className="flex flex-wrap justify-end gap-2 border-t border-stone-100 bg-stone-50/60 px-4 py-3 sm:px-6 sm:py-4">{kaki}</div>}
     </Kartu>
   );
 }

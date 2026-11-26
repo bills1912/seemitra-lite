@@ -197,7 +197,7 @@ export function Dokumen() {
 
 function KartuDokumen({ judul, ket, ikon, warna, children }: { judul: string; ket: string; ikon: ReactNode; warna: string; children: ReactNode }) {
   return (
-    <Kartu className="p-6" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+    <Kartu className="p-4 sm:p-6" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <div className="mb-5 flex gap-4">
         <div className={cx('grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-sm', warna)}>{ikon}</div>
         <div><h2 className="font-bold text-stone-900">{judul}</h2><p className="text-sm text-stone-500">{ket}</p></div>

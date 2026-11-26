@@ -24,7 +24,7 @@ export function Beranda() {
     return (
       <div className="space-y-6">
         <Kerangka className="h-16 w-80" />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((i) => <Kerangka key={i} className="h-32" />)}</div>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">{[1, 2, 3, 4].map((i) => <Kerangka key={i} className="h-32" />)}</div>
         <Kerangka className="h-72" />
       </div>
     );
@@ -56,18 +56,18 @@ export function Beranda() {
         </div>
       </div>
 
-      <motion.div variants={urutan.wadah} initial="awal" animate="tampil" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <motion.div variants={urutan.wadah} initial="awal" animate="tampil" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         {kartu.map((k) => (
           <motion.div key={k.label} variants={urutan.anak} whileHover={{ y: -3 }}>
             <Link to={k.ke}>
-              <Kartu className="group relative h-full overflow-hidden p-5">
-                <div className={cx('mb-4 grid size-11 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-sm', k.warna)}><k.ikon className="size-5" /></div>
-                <div className="text-[13px] font-semibold text-stone-500">{k.label}</div>
-                <div className="mt-0.5 text-2xl font-extrabold tracking-tight text-stone-900 sm:text-[26px]">
+              <Kartu className="group relative h-full overflow-hidden p-3.5 sm:p-5">
+                <div className={cx('mb-3 grid size-9 place-items-center rounded-xl bg-gradient-to-br text-white shadow-sm sm:mb-4 sm:size-11 sm:rounded-2xl', k.warna)}><k.ikon className="size-4 sm:size-5" /></div>
+                <div className="text-xs font-semibold text-stone-500 sm:text-[13px]">{k.label}</div>
+                <div className="mt-0.5 truncate text-lg font-extrabold tracking-tight text-stone-900 sm:text-2xl xl:text-[26px]">
                   <AngkaHidup nilai={k.nilai} format={k.uang ? (n) => rupiah(n) : undefined} />
                 </div>
                 {k.sub && <div className="mt-0.5 text-xs text-stone-400">{k.sub}</div>}
-                <ArrowRight className="absolute right-5 top-6 size-4 text-stone-300 transition group-hover:translate-x-1 group-hover:text-brand-500" />
+                <ArrowRight className="absolute right-4 top-5 size-4 sm:right-5 sm:top-6 text-stone-300 transition group-hover:translate-x-1 group-hover:text-brand-500" />
               </Kartu>
             </Link>
           </motion.div>
@@ -75,18 +75,18 @@ export function Beranda() {
       </motion.div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-5">
-        <Kartu className="p-6 xl:col-span-3" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+        <Kartu className="p-4 sm:p-6 xl:col-span-3" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
           <div className="mb-1 flex items-center justify-between">
             <h2 className="font-bold text-stone-900">Honor mitra per bulan kegiatan · {data.bulan.slice(0, 4)}</h2>
             <span className="text-xs text-stone-400">klik batang untuk melihat rekap</span>
           </div>
           <p className="mb-5 text-sm text-stone-500">Total {rupiah(data.grafik.reduce((a, g) => a + g.total, 0))}</p>
-          <div className="flex h-56 items-end gap-1.5 sm:gap-2.5">
+          <div className="flex h-48 items-end gap-1 sm:h-56 sm:gap-2.5">
             {data.grafik.map((g, i) => {
               const ini = g.bulan === data.bulan;
               return (
                 <button key={g.bulan} onClick={() => nav(`/rekap?bulan=${g.bulan}`)} className="group relative flex h-full flex-1 flex-col items-center justify-end gap-2">
-                  <span className="pointer-events-none absolute -top-1 z-10 -translate-y-full whitespace-nowrap rounded-lg bg-stone-900 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow transition group-hover:opacity-100">
+                  <span className={cx('pointer-events-none absolute -top-1 z-10 hidden -translate-y-full whitespace-nowrap rounded-lg bg-stone-900 px-2 py-1 text-[11px] font-semibold text-white shadow group-hover:block', i < 3 ? 'left-0' : i > 8 ? 'right-0' : '')}>
                     {rupiah(g.total)} · {g.mitra} mitra
                   </span>
                   <motion.div
@@ -102,7 +102,7 @@ export function Beranda() {
           <div className="mt-3 text-right text-xs text-stone-400">Tertinggi {rupiahRingkas(maksGrafik)}</div>
         </Kartu>
 
-        <Kartu className="p-6 xl:col-span-2" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+        <Kartu className="p-4 sm:p-6 xl:col-span-2" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
           <h2 className="mb-4 font-bold text-stone-900">Perlu perhatian</h2>
           {data.perhatian.length === 0 ? (
             <div className="flex flex-col items-center py-8 text-center">
@@ -129,7 +129,7 @@ export function Beranda() {
         </Kartu>
       </div>
 
-      <Kartu className="mt-6 p-6" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+      <Kartu className="mt-6 p-4 sm:p-6" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-bold text-stone-900">Kegiatan berjalan & 30 hari ke depan</h2>
           <Link to="/kegiatan" className="text-sm font-semibold text-brand-700 hover:underline">Semua kegiatan</Link>

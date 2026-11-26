@@ -257,15 +257,15 @@ export function Jendela({ buka, tutup, judul, sub, children, kaki, lebar = 'max-
             transition={pegas}
             className={cx('relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-melayang sm:rounded-3xl', lebar)}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-stone-100 px-6 pb-4 pt-5">
+            <div className="flex items-start justify-between gap-4 border-b border-stone-100 px-5 pb-4 pt-5 sm:px-6">
               <div>
                 <h2 className="text-lg font-bold text-stone-900">{judul}</h2>
                 {sub && <p className="mt-0.5 text-sm text-stone-500">{sub}</p>}
               </div>
               <TombolIkon label="Tutup" onClick={tutup} className="-mr-2 -mt-1"><X className="size-5" /></TombolIkon>
             </div>
-            <div className="scroll-tipis flex-1 overflow-y-auto px-6 py-5">{children}</div>
-            {kaki && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-stone-100 bg-stone-50/60 px-6 py-4">{kaki}</div>}
+            <div className="scroll-tipis flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div>
+            {kaki && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-stone-100 bg-stone-50/60 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">{kaki}</div>}
           </motion.div>
         </motion.div>
       )}
@@ -368,13 +368,13 @@ export function PemilihBulan({ nilai, ubah }: { nilai: string; ubah: (b: string)
 /* ------------------------------ Kepala halaman ------------------------------ */
 export function KepalaHalaman({ judul, sub, aksi, kembali }: { judul: ReactNode; sub?: ReactNode; aksi?: ReactNode; kembali?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
+    <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="min-w-0 lg:flex-1">
         {kembali}
         <h1 className="text-2xl font-extrabold tracking-tight text-stone-900 sm:text-[28px]">{judul}</h1>
         {sub && <p className="mt-1 text-[15px] text-stone-500">{sub}</p>}
       </div>
-      {aksi && <div className="flex flex-wrap items-center gap-2">{aksi}</div>}
+      {aksi && <div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:justify-end">{aksi}</div>}
     </div>
   );
 }

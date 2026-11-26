@@ -49,16 +49,16 @@ export function Rekap() {
           {dasar === 'kegiatan' && <Link to={`/dokumen?bulan=${bulan}`}><Tombol ikon={<FileSignature className="size-4" />}>SPK & BAST</Tombol></Link>}
         </>} />
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         {[
           ['Total honor', <AngkaHidup key="a" nilai={total} format={rupiah} />],
           ['Mitra menerima honor', <AngkaHidup key="b" nilai={data?.baris.length ?? 0} />],
           ['Kegiatan', <AngkaHidup key="c" nilai={data?.kegiatan.length ?? 0} />],
           [dasar === 'bayar' ? 'Status SBML' : 'Melebihi SBML', dasar === 'bayar' ? <button key="d" onClick={() => setDasar('kegiatan')} className="text-base text-brand-700 underline">lihat per bulan kegiatan</button> : adaSbml ? <span key="d" className={lebih ? 'text-rose-600' : 'text-emerald-600'}><AngkaHidup nilai={lebih} /> <span className="text-sm font-semibold text-stone-400">mitra{dekat ? ` · ${dekat} mendekati` : ''}</span></span> : <Link key="d" to="/pengaturan?tab=batas" className="text-base text-brand-700 underline">Atur SBML</Link>],
         ].map(([l, v], i) => (
-          <Kartu key={i} className="p-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+          <Kartu key={i} className="p-3.5 sm:p-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <div className="text-[13px] font-semibold text-stone-500">{l}</div>
-            <div className="mt-1 text-xl font-extrabold tracking-tight text-stone-900">{v}</div>
+            <div className="mt-1 text-base font-extrabold tracking-tight text-stone-900 sm:text-xl">{v}</div>
           </Kartu>
         ))}
       </div>

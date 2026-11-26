@@ -75,7 +75,7 @@ export function DetailKegiatan() {
 
       {data.seri && data.seri.length > 1 && <NavigasiSeri seri={data.seri} ini={k.id} punyaPetugas={petugas.length > 0} />}
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
         {[
           { ikon: CalendarRange, label: 'Jadwal', isi: rentang(k.tanggal_mulai, k.tanggal_selesai), sub: <>Bulan kegiatan <Link to={`/rekap?bulan=${k.bulan_kegiatan}`} className="font-semibold hover:text-brand-700 hover:underline">{labelBulan(k.bulan_kegiatan)}</Link> · dibayar <Link to={`/rekap?bulan=${k.bulan_honor}&dasar=bayar`} className="font-semibold hover:text-brand-700 hover:underline">{labelBulan(k.bulan_honor)}</Link></> },
           { ikon: Users, label: 'Petugas', isi: <><AngkaHidup nilai={k.jumlah_petugas} />{k.target_petugas ? <span className="text-stone-400"> / {k.target_petugas}</span> : ''}</>, sub: k.target_petugas ? (k.jumlah_petugas >= k.target_petugas ? 'Target terpenuhi ✓' : `Kurang ${k.target_petugas - k.jumlah_petugas} orang`) : 'mitra' },
@@ -84,9 +84,9 @@ export function DetailKegiatan() {
             : lebih ? <span className="font-semibold text-rose-600">{lebih} mitra melebihi SBML {labelBulan(k.bulan_kegiatan)}</span>
             : dekat ? <span className="font-semibold text-amber-600">{dekat} mitra mendekati SBML</span> : 'semua petugas dalam batas SBML' },
         ].map((c, i) => (
-          <Kartu key={c.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="p-4">
-            <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-stone-500"><c.ikon className="size-4 text-brand-600" />{c.label}</div>
-            <div className="text-xl font-extrabold tracking-tight text-stone-900">{c.isi}</div>
+          <Kartu key={c.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="p-3.5 sm:p-4">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-stone-500 sm:text-[13px]"><c.ikon className="size-4 text-brand-600" />{c.label}</div>
+            <div className="truncate text-base font-extrabold tracking-tight text-stone-900 sm:text-xl">{c.isi}</div>
             <div className="mt-0.5 truncate text-xs text-stone-400">{c.sub}</div>
           </Kartu>
         ))}
@@ -391,15 +391,15 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
         <Tombol varian="kedua" onClick={tutup}>Batal</Tombol>
         <Tombol disabled={!dipilih.size} memuat={tambah.isPending} ikon={<UserPlus className="size-4" />} onClick={kirim}>Tambahkan</Tombol>
       </>}>
-      <div className="mb-4 grid gap-3 rounded-2xl bg-stone-50 p-4 sm:grid-cols-3">
-        <Kolom label="Sebagai" petunjuk={batas ? `SBML ${peran}: ${rupiah(batas)}/bulan` : `SBML ${peran} belum diatur`}><Pilihan nilai={peran} ubah={gantiPeran} opsi={[...new Set([...peranAda, ...(atur?.daftar_peran ?? [])])]} /></Kolom>
+      <div className="mb-4 grid grid-cols-2 gap-3 rounded-2xl bg-stone-50 p-3 sm:grid-cols-3 sm:p-4">
+        <Kolom className="col-span-2 sm:col-span-1" label="Sebagai" petunjuk={batas ? `SBML ${peran}: ${rupiah(batas)}/bulan` : `SBML ${peran} belum diatur`}><Pilihan nilai={peran} ubah={gantiPeran} opsi={[...new Set([...peranAda, ...(atur?.daftar_peran ?? [])])]} /></Kolom>
         <Kolom label={`Volume (${k.satuan})`} petunjuk="Boleh diisi nanti"><Masukan type="number" min={0} value={volume || ''} onChange={(e) => setVolume(Number(e.target.value))} placeholder="0" /></Kolom>
         <Kolom label="Tarif" petunjuk={honorBaru ? `Honor per orang ${rupiah(honorBaru)}` : 'dari tarif kegiatan'}><MasukanRupiah nilai={tarif} ubah={setTarif} /></Kolom>
       </div>
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <KotakCari autoFocus nilai={q} ubah={setQ} placeholder={modeCek ? 'Cari mitra atau nama kegiatan…' : 'Cari nama, SOBAT ID, atau wilayah…'} className="flex-1" />
-        <Tombol varian={modeCek ? 'utama' : 'lembut'} ikon={<ClipboardList className="size-4" />} onClick={() => setModeCek(!modeCek)}>
-          {modeCek ? 'Kembali memilih' : `Cek kegiatan mitra · ${periode.label}`}
+        <Tombol varian={modeCek ? 'utama' : 'lembut'} ikon={<ClipboardList className="size-4" />} onClick={() => setModeCek(!modeCek)} className="shrink-0">
+          {modeCek ? 'Kembali memilih' : <>Cek kegiatan mitra<span className="hidden sm:inline"> · {periode.label}</span></>}
         </Tombol>
       </div>
       {modeCek ? (
@@ -413,7 +413,7 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
         {dipilih.size > 0 && <button className="font-semibold hover:underline" onClick={() => setDipilih(new Set())}>Kosongkan pilihan</button>}
       </div>
       {!data ? <Memuat /> : daftar.length === 0 ? <p className="py-10 text-center text-sm text-stone-400">Tidak ada mitra aktif yang cocok. Tambahkan mitra di menu Mitra.</p> : (
-        <ul className="scroll-tipis max-h-[42vh] space-y-1 overflow-y-auto pr-1">
+        <ul className="scroll-tipis max-h-[55vh] space-y-1 overflow-y-auto pr-1 sm:max-h-[42vh]">
           {daftar.slice(0, 300).map((m) => {
             const aktif = dipilih.has(m.id);
             const tampilHonor = sekarang(m) + (aktif ? honorBaru : 0);
@@ -421,7 +421,7 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
             return (
               <motion.li key={m.id} layout="position" className={cx('rounded-xl border transition', aktif ? 'border-brand-300 bg-brand-50/60' : 'border-transparent hover:bg-stone-50')}>
                 <div className="flex items-center gap-2 pr-2">
-                <button onClick={() => balik(m)} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left">
+                <button onClick={() => balik(m)} className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2.5 text-left sm:gap-3 sm:px-3">
                   <Kotak aktif={aktif} ubah={() => balik(m)} />
                   <Avatar nama={m.nama} />
                   <div className="min-w-0 flex-1">
@@ -433,8 +433,11 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
                       {st === 'lewat' && <Lencana warna="merah">melebihi SBML</Lencana>}
                     </div>
                     <div className="truncate text-xs text-stone-400">{[m.kecamatan, m.desa].filter(Boolean).join(' · ') || m.sobat_id || '—'}</div>
+                    <div className={cx('angka text-xs font-semibold sm:hidden', st === 'lewat' ? 'text-rose-600' : st === 'dekat' ? 'text-amber-600' : 'text-stone-500')}>
+                      {rupiah(tampilHonor)}{batas ? ` / ${rupiah(batas)}` : ''}
+                    </div>
                   </div>
-                  <div className="w-40 shrink-0 text-right">
+                  <div className="hidden w-40 shrink-0 text-right sm:block">
                     <div className={cx('angka text-xs font-semibold', st === 'lewat' ? 'text-rose-600' : st === 'dekat' ? 'text-amber-600' : 'text-stone-500')}>
                       {rupiah(tampilHonor)}{batas ? <span className="font-normal text-stone-300"> / {rupiah(batas)}</span> : ''}
                     </div>
@@ -445,9 +448,9 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
                   const n = alokasiMitra.get(m.id)?.length ?? 0;
                   return (
                     <button type="button" onClick={(e) => { jangkarRinci.current = e.currentTarget; setRinci(rinci === m.id ? null : m.id); }} title={`Cek kegiatan mitra di ${periode.label}`}
-                      className={cx('flex w-28 shrink-0 items-center justify-end gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition',
+                      className={cx('flex shrink-0 items-center justify-end gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition sm:w-28',
                         n ? 'text-sky-700 hover:bg-sky-50' : 'text-stone-300 hover:bg-stone-100 hover:text-stone-500')}>
-                      <ClipboardList className="size-3.5" />{n ? `${n} kegiatan` : 'kosong'}
+                      <ClipboardList className="size-3.5" />{n ? <>{n}<span className="hidden sm:inline"> kegiatan</span></> : <span className="hidden sm:inline">kosong</span>}
                       <ChevronDown className={cx('size-3.5 transition-transform', rinci === m.id && 'rotate-180')} />
                     </button>
                   );
