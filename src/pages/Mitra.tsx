@@ -3,16 +3,17 @@ import { Link, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  ArchiveRestore, CalendarDays, Download, FileSignature, Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users, Wallet,
+  ArchiveRestore, CalendarDays, CheckSquare, Download, FileSignature, Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users, Wallet,
 } from 'lucide-react';
 import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Mitra } from '../lib/types';
-import { useAksi, usePengaturan } from '../lib/hooks';
+import { useAksi, usePengaturan, useSaya } from '../lib/hooks';
+import { BilahPilihan, JendelaHapusBanyak } from '../components/HapusBanyak';
 import { jumlahPerPeran, persen, statusSbml, statusTerburuk } from '../lib/sbml';
 import { useUmpan } from '../components/umpan';
 import { Pilihan, IsianSaran } from '../components/pemilih';
 import {
-  AreaUnggah, Avatar, Batang, Laci as LaciDetail, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, KotakCari, Lencana, Masukan, Memuat, Saklar, Segmen, Tombol, TombolIkon, cx,
+  AreaUnggah, Avatar, Batang, Kotak, Laci as LaciDetail, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, KotakCari, Lencana, Masukan, Memuat, Saklar, Segmen, Tombol, TombolIkon, cx,
 } from '../components/ui';
 import { bulanIni, cocok, labelBulan, rupiah, tanggal } from '../lib/format';
 
@@ -27,6 +28,14 @@ export function HalamanMitra() {
   const [batas, setBatas] = useState(PER_HALAMAN);
   const [form, setForm] = useState<Partial<Mitra> | null>(null);
   const [impor, setImpor] = useState(false);
+  // mode pilih banyak (khusus admin)
+  const admin = useSaya().data?.pengguna?.peran === 'admin';
+  const [modePilih, setModePilih] = useState(false);
+  const [terpilih, setTerpilih] = useState<Set<number>>(new Set());
+  const [konfirmHapus, setKonfirmHapus] = useState(false);
+  const [menghapus, setMenghapus] = useState(false);
+  const balikPilih = (id: number) => setTerpilih((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const selesaiPilih = () => { setModePilih(false); setTerpilih(new Set()); };
   const { beritahu, konfirmasi } = useUmpan();
 
   const { data, isLoading } = useQuery({ queryKey: ['mitra', sampah], queryFn: () => api.get<Mitra[]>(`/mitra${sampah ? '?terhapus=1' : ''}`) });
@@ -54,6 +63,17 @@ export function HalamanMitra() {
     } catch (e) { beritahu('galat', (e as Error).message); }
   };
   const pulihkan = useAksi((m: Mitra) => api.post(`/mitra/${m.id}/pulihkan`), { sukses: (_, m) => `${m.nama} dipulihkan.` });
+  const hapusBanyak = async () => {
+    const ids = [...terpilih];
+    setMenghapus(true);
+    try {
+      const r = await api.post<{ jumlah: number }>('/mitra/hapus-banyak', { ids });
+      segarkan();
+      setKonfirmHapus(false);
+      selesaiPilih();
+      beritahu('sukses', <><b>{r.jumlah}</b> mitra dipindahkan ke tempat sampah.</>, { urungkan: async () => { await api.post('/mitra/pulihkan-banyak', { ids }); segarkan(); } });
+    } catch (e) { beritahu('galat', (e as Error).message); } finally { setMenghapus(false); }
+  };
 
   return (
     <div>
@@ -61,6 +81,7 @@ export function HalamanMitra() {
         judul={sampah ? 'Mitra terhapus' : 'Daftar Mitra'}
         sub={sampah ? 'Mitra yang dihapus dapat dipulihkan dari sini.' : `${data?.filter((m) => m.status === 'aktif').length ?? 0} mitra aktif terdaftar`}
         aksi={sampah ? <Tombol varian="kedua" onClick={() => setSampah(false)}>Kembali ke daftar</Tombol> : <>
+          {admin && <Tombol varian={modePilih ? 'lembut' : 'kedua'} ikon={<CheckSquare className="size-4" />} onClick={() => (modePilih ? selesaiPilih() : setModePilih(true))}>{modePilih ? 'Batal pilih' : 'Pilih'}</Tombol>}
           <Tombol varian="kedua" ikon={<Upload className="size-4" />} onClick={() => setImpor(true)}>Impor Excel</Tombol>
           <Tombol varian="kedua" ikon={<Download className="size-4" />} onClick={() => unduhFile('/mitra-ekspor').catch((e) => beritahu('galat', e.message))}>Ekspor</Tombol>
           <Tombol ikon={<Plus className="size-4" />} onClick={() => setForm({ status: 'aktif' })}>Tambah Mitra</Tombol>
@@ -90,9 +111,16 @@ export function HalamanMitra() {
             <AnimatePresence initial={false}>
               {tersaring.slice(0, batas).map((m, i) => (
                 <motion.li key={m.id} layout="position" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0, transition: { delay: Math.min(i, 15) * 0.02 } }} exit={{ opacity: 0, x: -30, height: 0 }}
-                  onClick={() => !sampah && setParam({ lihat: String(m.id) })}
-                  className={cx('group grid cursor-pointer grid-cols-[1fr_auto] items-center gap-4 px-5 py-3.5 transition-colors hover:bg-brand-50/40 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)_88px]', sampah && 'cursor-default')}>
+                  onClick={() => (modePilih ? balikPilih(m.id) : !sampah && setParam({ lihat: String(m.id) }))}
+                  className={cx(modePilih && terpilih.has(m.id) && 'bg-rose-50/60', 'group grid cursor-pointer grid-cols-[1fr_auto] items-center gap-4 px-5 py-3.5 transition-colors hover:bg-brand-50/40 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)_88px]', sampah && 'cursor-default')}>
                   <div className="flex min-w-0 items-center gap-3">
+                    <AnimatePresence initial={false}>
+                      {modePilih && (
+                        <motion.span initial={{ width: 0, opacity: 0 }} animate={{ width: 'auto', opacity: 1 }} exit={{ width: 0, opacity: 0 }} className="overflow-hidden">
+                          <Kotak aktif={terpilih.has(m.id)} ubah={() => balikPilih(m.id)} />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
                     <Avatar nama={m.nama} />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -108,7 +136,7 @@ export function HalamanMitra() {
                     <div className="angka text-sm font-semibold text-stone-700">{m.honor_bulan_ini ? rupiah(m.honor_bulan_ini) : <span className="text-stone-300">—</span>}</div>
                     {m.rasio_sbml != null && m.honor_bulan_ini ? <Batang nilai={m.rasio_sbml} maks={1} ambang={atur?.ambang_sbml} className="mt-1.5 max-w-36" /> : null}
                   </div>
-                  <div className="flex justify-end gap-0.5 md:opacity-0 md:transition md:group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                  <div className={cx('flex justify-end gap-0.5 md:opacity-0 md:transition md:group-hover:opacity-100', modePilih && 'invisible')} onClick={(e) => e.stopPropagation()}>
                     {sampah ? <Tombol kecil varian="lembut" ikon={<ArchiveRestore className="size-4" />} onClick={() => pulihkan.mutate(m)}>Pulihkan</Tombol> : <>
                       <TombolIkon label="Ubah" onClick={() => setForm(m)}><Pencil className="size-4" /></TombolIkon>
                       <TombolIkon label="Hapus" onClick={() => hapus(m)} className="hover:bg-rose-50 hover:text-rose-600"><Trash2 className="size-4" /></TombolIkon>
@@ -127,6 +155,11 @@ export function HalamanMitra() {
       )}
       {!sampah && <button onClick={() => setSampah(true)} className="mt-4 flex items-center gap-1.5 text-sm font-medium text-stone-400 hover:text-stone-600"><Trash2 className="size-4" /> Lihat mitra yang terhapus</button>}
 
+      <BilahPilihan aktif={modePilih} jumlah={terpilih.size} totalTampil={tersaring.length}
+        pilihSemua={() => setTerpilih(new Set(tersaring.map((m) => m.id)))} kosongkan={() => setTerpilih(new Set())} batal={selesaiPilih} hapus={() => setKonfirmHapus(true)} />
+      <JendelaHapusBanyak buka={konfirmHapus} tutup={() => setKonfirmHapus(false)} jenis="mitra" memuat={menghapus} setuju={hapusBanyak}
+        nama={(data ?? []).filter((m) => terpilih.has(m.id)).map((m) => m.nama)}
+        keterangan={<>Mitra dipindahkan ke <b>tempat sampah</b> dan masih bisa dipulihkan. Penugasan mereka tidak dihitung selama di tempat sampah. Untuk mengosongkan seluruh data secara permanen, gunakan <b>Pengaturan → Reset data</b>.</>} />
       <FormMitra data={form} tutup={() => setForm(null)} daftarKec={daftarKec} />
       <ImporMitra buka={impor} tutup={() => setImpor(false)} />
       <DetailMitra id={lihatId} tutup={() => { param.delete('lihat'); setParam(param, { replace: true }); }} ubah={(m) => setForm(m)} />

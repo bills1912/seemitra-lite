@@ -18,6 +18,8 @@ Hampir semua hal yang biasa berubah dari tahun ke tahun bisa diatur langsung dar
 | Isi kalimat, kop, tata letak SPK & BAST | **Pengaturan → Template dokumen** (edit di Microsoft Word) |
 | Menambah / menghapus akun pengguna, reset kata sandi | **Pengaturan → Pengguna**. Rekan juga bisa klik *Daftar di sini* di halaman masuk, lalu admin klik **Setujui** |
 | Mencadangkan / memulihkan data | **Pengaturan → Cadangan data** |
+| Menghapus banyak mitra/kegiatan sekaligus (admin) | Tombol **Pilih** di halaman Mitra/Kegiatan → centang → **Hapus** (masuk tempat sampah, bisa diurungkan) |
+| Mengosongkan seluruh data mitra/kegiatan, mis. awal tahun (admin) | **Pengaturan → Reset data** (permanen; cadangan dibuat otomatis lebih dulu) |
 | Melihat siapa mengubah apa | **Pengaturan → Riwayat aktivitas** |
 
 ### Mengubah isi SPK / BAST

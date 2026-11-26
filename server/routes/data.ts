@@ -3,8 +3,8 @@
  */
 import { Hono, type Context } from 'hono';
 import crypto from 'node:crypto';
-import { db, catat, transaksi, ambilPengaturan } from '../db.ts';
-import type { Env } from '../auth.ts';
+import { db, catat, transaksi, ambilPengaturan, simpanCadanganKeFile } from '../db.ts';
+import { wajibAdmin, type Env } from '../auth.ts';
 import { akhirBulan, GagalError, geserBulan, isiNomor, labelBulan } from '../util.ts';
 import { bacaExcel, buatExcel } from '../excel.ts';
 
@@ -601,6 +601,58 @@ data.get('/alokasi-bulan', (c) => {
     bulan, dari, sampai, rows, sbml: sbmlBulan(bulan), ambang: p.ambang_sbml,
     nomor: Object.fromEntries(Object.entries(nomor).map(([id, u]) => [id, isiNomor(p.format_nomor_spk, u, bulan)])),
   });
+});
+
+/* =============================== HAPUS BANYAK & RESET (khusus admin) =============================== */
+const daftarId = (v: unknown) => {
+  const ids = Array.isArray(v) ? [...new Set(v.map(Number).filter((n) => Number.isInteger(n) && n > 0))] : [];
+  if (!ids.length) throw new GagalError('Belum ada data yang dipilih.');
+  return ids;
+};
+const tanda = (ids: number[]) => ids.map(() => '?').join(',');
+
+/** Hapus banyak = dipindah ke tempat sampah (bisa dipulihkan). */
+for (const tabel of ['mitra', 'kegiatan'] as const) {
+  data.post(`/${tabel}/hapus-banyak`, wajibAdmin, async (c) => {
+    const ids = daftarId((await c.req.json()).ids);
+    const r = db.prepare(`UPDATE ${tabel} SET dihapus = datetime('now','localtime') WHERE dihapus IS NULL AND id IN (${tanda(ids)})`).run(...ids);
+    catat(c.get('pengguna').nama, `Hapus banyak ${tabel}`, `${r.changes} data`);
+    return c.json({ jumlah: Number(r.changes) });
+  });
+  data.post(`/${tabel}/pulihkan-banyak`, wajibAdmin, async (c) => {
+    const ids = daftarId((await c.req.json()).ids);
+    const r = db.prepare(`UPDATE ${tabel} SET dihapus = NULL WHERE id IN (${tanda(ids)})`).run(...ids);
+    catat(c.get('pengguna').nama, `Pulihkan banyak ${tabel}`, `${r.changes} data`);
+    return c.json({ jumlah: Number(r.changes) });
+  });
+}
+
+data.get('/reset/ringkasan', wajibAdmin, (c) => {
+  const n = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+  return c.json({
+    mitra: n('SELECT COUNT(*) n FROM mitra'), kegiatan: n('SELECT COUNT(*) n FROM kegiatan'), penugasan: n('SELECT COUNT(*) n FROM penugasan'),
+  });
+});
+
+/**
+ * RESET DATA — menghapus PERMANEN mitra dan/atau kegiatan (termasuk yang di tempat sampah).
+ * Sebelum menghapus, server selalu membuat file cadangan sehingga masih bisa dipulihkan dari Pengaturan → Cadangan data.
+ */
+data.post('/reset', wajibAdmin, async (c) => {
+  const b = (await c.req.json()) as { mitra?: boolean; kegiatan?: boolean; konfirmasi?: string };
+  if (!b.mitra && !b.kegiatan) throw new GagalError('Pilih data yang ingin direset.');
+  if (String(b.konfirmasi ?? '').trim().toUpperCase() !== 'HAPUS SEMUA') throw new GagalError('Ketik HAPUS SEMUA untuk mengonfirmasi.');
+  const cadangan = simpanCadanganKeFile('sebelum-reset');
+  const hasil = transaksi(() => {
+    const out: Record<string, number> = {};
+    out.penugasan = Number(db.prepare('DELETE FROM penugasan').run().changes);
+    db.exec('DELETE FROM nomor_dokumen; DELETE FROM spk_bulan;');
+    if (b.kegiatan) out.kegiatan = Number(db.prepare('DELETE FROM kegiatan').run().changes);
+    if (b.mitra) out.mitra = Number(db.prepare('DELETE FROM mitra').run().changes);
+    return out;
+  });
+  catat(c.get('pengguna').nama, 'RESET DATA', `${b.mitra ? 'mitra ' : ''}${b.kegiatan ? 'kegiatan ' : ''}— cadangan: ${cadangan}`);
+  return c.json({ ...hasil, cadangan });
 });
 
 /* =============================== PENCARIAN CEPAT =============================== */

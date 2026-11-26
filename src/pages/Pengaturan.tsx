@@ -3,14 +3,14 @@ import { useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  Building2, Copy, DatabaseBackup, Download, FileText, Hash, History, KeyRound, ListChecks, Pencil, Plus, RotateCcw, Scale, Trash2, Upload, UserCog, X,
+  AlertOctagon, Building2, Copy, DatabaseBackup, Download, FileText, Hash, History, KeyRound, ListChecks, Pencil, Plus, RotateCcw, Scale, Trash2, Upload, UserCog, X,
 } from 'lucide-react';
 import { api, kirimFile, queryClient, segarkan, unduhFile } from '../lib/api';
 import type { Pengaturan, Pengguna } from '../lib/types';
 import { useAksi, usePengaturan, useSaya } from '../lib/hooks';
 import { useUmpan } from '../components/umpan';
 import { Pilihan } from '../components/pemilih';
-import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Lencana, Masukan, MasukanRupiah, Memuat, Tombol, TombolIkon, cx, pegas } from '../components/ui';
+import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Kotak, Lencana, Masukan, MasukanRupiah, Memuat, Tombol, TombolIkon, cx, pegas } from '../components/ui';
 import { rupiah, tanggal } from '../lib/format';
 
 const TAB = [
@@ -21,6 +21,7 @@ const TAB = [
   { id: 'template', label: 'Template dokumen', ikon: FileText, admin: false },
   { id: 'pengguna', label: 'Pengguna', ikon: UserCog, admin: true },
   { id: 'cadangan', label: 'Cadangan data', ikon: DatabaseBackup, admin: true },
+  { id: 'reset', label: 'Reset data', ikon: AlertOctagon, admin: true },
   { id: 'riwayat', label: 'Riwayat aktivitas', ikon: History, admin: false },
   { id: 'akun', label: 'Akun saya', ikon: KeyRound, admin: false },
 ] as const;
@@ -54,6 +55,7 @@ export function HalamanPengaturan() {
             {tab === 'template' && <TabTemplate admin={admin} />}
             {tab === 'pengguna' && <TabPengguna saya={saya?.pengguna?.id} />}
             {tab === 'cadangan' && <TabCadangan />}
+            {tab === 'reset' && <TabReset />}
             {tab === 'riwayat' && <TabRiwayat />}
             {tab === 'akun' && <TabAkun />}
           </motion.div>
@@ -396,6 +398,70 @@ function TabCadangan() {
         )}
       </Panel>
     </div>
+  );
+}
+
+/** Reset seluruh data mitra dan/atau kegiatan — dengan persetujuan berlapis & cadangan otomatis */
+function TabReset() {
+  const { data: ringkas } = useQuery({ queryKey: ['reset-ringkasan'], queryFn: () => api.get<{ mitra: number; kegiatan: number; penugasan: number }>('/reset/ringkasan') });
+  const [pilih, setPilih] = useState({ mitra: false, kegiatan: false });
+  const [buka, setBuka] = useState(false);
+  const [paham, setPaham] = useState(false);
+  const [paham2, setPaham2] = useState(false);
+  const [ketik, setKetik] = useState('');
+  const [, setParam] = useSearchParams();
+  const { beritahu } = useUmpan();
+  const reset = useAksi(() => api.post<{ mitra?: number; kegiatan?: number; penugasan: number; cadangan: string }>('/reset', { ...pilih, konfirmasi: ketik }), {
+    setelah: (r) => {
+      setBuka(false);
+      beritahu('sukses', <>Reset selesai: {r.mitra !== undefined && <>{r.mitra} mitra, </>}{r.kegiatan !== undefined && <>{r.kegiatan} kegiatan, </>}{r.penugasan} penugasan dihapus. Cadangan otomatis: <b>{r.cadangan}</b></>);
+    },
+  });
+  const bukaJendela = () => { setPaham(false); setPaham2(false); setKetik(''); setBuka(true); };
+  const siap = paham && paham2 && ketik.trim().toUpperCase() === 'HAPUS SEMUA';
+  const yangDihapus = [
+    pilih.mitra && `${ringkas?.mitra ?? 0} mitra (termasuk yang di tempat sampah)`,
+    pilih.kegiatan && `${ringkas?.kegiatan ?? 0} kegiatan (termasuk yang di tempat sampah)`,
+    `${ringkas?.penugasan ?? 0} penugasan petugas beserta nomor SPK/BAST yang sudah diberikan`,
+  ].filter(Boolean) as string[];
+
+  return (
+    <Panel judul="Reset data" ket="Menghapus PERMANEN seluruh data mitra dan/atau kegiatan, mis. untuk memulai tahun baru atau setelah uji coba. Pengaturan, pengguna, SBML, dan template tidak ikut terhapus.">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2">
+        {([['mitra', 'Semua mitra', ringkas?.mitra], ['kegiatan', 'Semua kegiatan', ringkas?.kegiatan]] as const).map(([k, l, n]) => (
+          <button key={k} type="button" onClick={() => setPilih({ ...pilih, [k]: !pilih[k] })}
+            className={cx('flex items-center gap-3 rounded-2xl border-2 p-4 text-left transition', pilih[k] ? 'border-rose-400 bg-rose-50' : 'border-stone-200 hover:border-stone-300')}>
+            <Kotak aktif={pilih[k]} ubah={() => setPilih({ ...pilih, [k]: !pilih[k] })} />
+            <div><div className="font-bold text-stone-800">{l}</div><div className="text-xs text-stone-500">{n ?? 0} data · penugasannya ikut terhapus</div></div>
+          </button>
+        ))}
+      </div>
+      <div className="mb-5 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+        Sebelum menghapus, aplikasi otomatis membuat <b>file cadangan</b>. Bila salah, data bisa dikembalikan dari{' '}
+        <button className="font-bold underline" onClick={() => setParam({ tab: 'cadangan' }, { replace: true })}>Cadangan data</button>.
+      </div>
+      <Tombol varian="bahaya" disabled={!pilih.mitra && !pilih.kegiatan} ikon={<AlertOctagon className="size-4" />} onClick={bukaJendela}>Reset data terpilih…</Tombol>
+
+      <Jendela buka={buka} tutup={() => setBuka(false)} judul="Konfirmasi reset data" sub="Tindakan ini menghapus data secara permanen."
+        kaki={<>
+          <Tombol varian="kedua" onClick={() => setBuka(false)}>Batal</Tombol>
+          <Tombol varian="bahaya" disabled={!siap} memuat={reset.isPending} ikon={<Trash2 className="size-4" />} onClick={() => reset.mutate(undefined)}>Hapus permanen</Tombol>
+        </>}>
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-900">
+            <p className="mb-2 font-bold">Yang akan dihapus permanen:</p>
+            <ul className="list-disc space-y-1 pl-5">{yangDihapus.map((t) => <li key={t}>{t}</li>)}</ul>
+          </div>
+          <div className="space-y-3 rounded-xl border border-stone-200 p-3 text-sm">
+            <Kotak aktif={paham} ubah={setPaham} label="Saya mengerti data di atas akan dihapus permanen dan tidak bisa dipulihkan dari tempat sampah." />
+            <Kotak aktif={paham2} ubah={setPaham2} label="Saya mengerti pemulihan hanya bisa dilakukan dari file cadangan yang dibuat otomatis sebelum reset." />
+          </div>
+          <Kolom label='Ketik "HAPUS SEMUA" untuk melanjutkan'>
+            <Masukan value={ketik} onChange={(e) => setKetik(e.target.value)} placeholder="HAPUS SEMUA" className={cx('font-mono', ketik && !siap && ketik.trim().toUpperCase() !== 'HAPUS SEMUA' && 'border-rose-300')} />
+          </Kolom>
+        </div>
+      </Jendela>
+    </Panel>
   );
 }
 

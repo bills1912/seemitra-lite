@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArchiveRestore, CalendarDays, Copy, Pencil, Plus, Repeat, Trash2, Users, Wallet } from 'lucide-react';
+import { ArchiveRestore, CalendarDays, CheckSquare, Copy, Pencil, Plus, Repeat, Trash2, Users, Wallet } from 'lucide-react';
 import { api, segarkan } from '../lib/api';
 import type { Kegiatan } from '../lib/types';
-import { useAksi, usePengaturan } from '../lib/hooks';
+import { useAksi, usePengaturan, useSaya } from '../lib/hooks';
+import { BilahPilihan, JendelaHapusBanyak } from '../components/HapusBanyak';
 import { useUmpan } from '../components/umpan';
 import { Pilihan, PilihTanggal, PilihBulanIsian, IsianSaran } from '../components/pemilih';
 import { Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Segmen, Tombol, TombolIkon, cx } from '../components/ui';
@@ -38,6 +39,14 @@ export function HalamanKegiatan() {
   const [salin, setSalin] = useState<Kegiatan | null>(null);
   const { beritahu, konfirmasi } = useUmpan();
   const nav = useNavigate();
+  // mode pilih banyak (khusus admin); kunci kartu → daftar id kegiatan (seri = semua bulannya)
+  const admin = useSaya().data?.pengguna?.peran === 'admin';
+  const [modePilih, setModePilih] = useState(false);
+  const [terpilih, setTerpilih] = useState<Set<string>>(new Set());
+  const [konfirmHapus, setKonfirmHapus] = useState(false);
+  const [menghapus, setMenghapus] = useState(false);
+  const balikPilih = (kunci: string) => setTerpilih((s) => { const n = new Set(s); n.has(kunci) ? n.delete(kunci) : n.add(kunci); return n; });
+  const selesaiPilih = () => { setModePilih(false); setTerpilih(new Set()); };
 
   const { data, isLoading } = useQuery({ queryKey: ['kegiatan', sampah], queryFn: () => api.get<Kegiatan[]>(`/kegiatan${sampah ? '?terhapus=1' : ''}`) });
   useEffect(() => {
@@ -83,12 +92,27 @@ export function HalamanKegiatan() {
       beritahu('sukses', <>Kegiatan <b>{k.nama}</b> dihapus.</>, { urungkan: async () => { await api.post(`/kegiatan/${k.id}/pulihkan${seri ? '?seri=1' : ''}`); segarkan(); } });
     } catch (e) { beritahu('galat', (e as Error).message); }
   };
+  const itemTerpilih = item.filter((it) => terpilih.has(it.kunci));
+  const hapusBanyak = async () => {
+    const ids = itemTerpilih.flatMap((it) => (it.seri ? it.seri.map((x) => x.id) : [it.utama.id]));
+    setMenghapus(true);
+    try {
+      const r = await api.post<{ jumlah: number }>('/kegiatan/hapus-banyak', { ids });
+      segarkan();
+      setKonfirmHapus(false);
+      selesaiPilih();
+      beritahu('sukses', <><b>{r.jumlah}</b> kegiatan dipindahkan ke tempat sampah.</>, { urungkan: async () => { await api.post('/kegiatan/pulihkan-banyak', { ids }); segarkan(); } });
+    } catch (e) { beritahu('galat', (e as Error).message); } finally { setMenghapus(false); }
+  };
   const pulihkan = useAksi((k: Kegiatan) => api.post(`/kegiatan/${k.id}/pulihkan${k.seri_id ? '?seri=1' : ''}`), { sukses: (_, k) => `${k.nama} dipulihkan.` });
 
   return (
     <div>
       <KepalaHalaman judul={sampah ? 'Kegiatan terhapus' : 'Kegiatan Survei & Sensus'} sub={sampah ? 'Pulihkan kegiatan yang terhapus.' : 'Atur jadwal, tarif honor, dan petugas setiap kegiatan.'}
-        aksi={sampah ? <Tombol varian="kedua" onClick={() => setSampah(false)}>Kembali</Tombol> : <Tombol ikon={<Plus className="size-4" />} onClick={() => setForm({})}>Tambah Kegiatan</Tombol>} />
+        aksi={sampah ? <Tombol varian="kedua" onClick={() => setSampah(false)}>Kembali</Tombol> : <>
+          {admin && <Tombol varian={modePilih ? 'lembut' : 'kedua'} ikon={<CheckSquare className="size-4" />} onClick={() => (modePilih ? selesaiPilih() : setModePilih(true))}>{modePilih ? 'Batal pilih' : 'Pilih'}</Tombol>}
+          <Tombol ikon={<Plus className="size-4" />} onClick={() => setForm({})}>Tambah Kegiatan</Tombol>
+        </>} />
 
       {!sampah && (
         <Kartu className="mb-5 flex flex-col gap-3 p-3 lg:flex-row lg:items-center">
@@ -116,14 +140,16 @@ export function HalamanKegiatan() {
               return (
                 <motion.div key={it.kunci} layout initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0, transition: { delay: Math.min(i, 12) * 0.03 } }}
                   exit={{ opacity: 0, scale: 0.9 }} whileHover={{ y: -3 }}>
-                  <Kartu onClick={() => !sampah && nav(`/kegiatan/${k.id}`)} className={cx('group flex h-full cursor-pointer flex-col p-5 transition-shadow hover:shadow-melayang', sampah && 'cursor-default')}>
+                  <Kartu onClick={() => (modePilih ? balikPilih(it.kunci) : !sampah && nav(`/kegiatan/${k.id}`))}
+                    className={cx('group flex h-full cursor-pointer flex-col p-5 transition-shadow hover:shadow-melayang', sampah && 'cursor-default', modePilih && terpilih.has(it.kunci) && 'ring-2 ring-rose-400 bg-rose-50/40')}>
                     <div className="mb-3 flex items-start justify-between gap-2">
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {modePilih && <span onClick={(e) => e.stopPropagation()}><Kotak aktif={terpilih.has(it.kunci)} ubah={() => balikPilih(it.kunci)} /></span>}
                         <Lencana warna={WARNA_STATUS[st]} titik>{LABEL_STATUS[st]}</Lencana>
                         <Lencana warna="brand">{k.jenis}</Lencana>
                         {it.seri && <Lencana warna="biru"><Repeat className="size-3" /> Bulanan</Lencana>}
                       </div>
-                      <div className="-mr-2 -mt-1 flex opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                      <div className={cx('-mr-2 -mt-1 flex opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100', modePilih && 'invisible')} onClick={(e) => e.stopPropagation()}>
                         {sampah ? <Tombol kecil varian="lembut" ikon={<ArchiveRestore className="size-4" />} onClick={() => pulihkan.mutate(k)}>Pulihkan</Tombol> : <>
                           {!it.seri && <TombolIkon label="Salin untuk periode lain" onClick={() => setSalin(k)}><Copy className="size-4" /></TombolIkon>}
                           <TombolIkon label={it.seri ? `Ubah (bulan ${labelBulan(k.bulan_kegiatan)})` : 'Ubah'} onClick={() => setForm(k)}><Pencil className="size-4" /></TombolIkon>
@@ -136,7 +162,7 @@ export function HalamanKegiatan() {
                       <>
                         <p className="mt-1 text-sm text-stone-500">{BULAN_PENDEK[Number(it.seri[0].bulan_kegiatan.slice(5)) - 1]}–{BULAN_PENDEK[Number(it.seri[it.seri.length - 1].bulan_kegiatan.slice(5)) - 1]} {it.seri[0].bulan_kegiatan.slice(0, 4)} · {it.seri.length} bulan</p>
                         {/* pilih bulan: tiap kotak = satu bulan; hijau bila sudah ada petugas */}
-                        <div className="mt-3 grid grid-cols-6 gap-1" onClick={(e) => e.stopPropagation()}>
+                        <div className={cx('mt-3 grid grid-cols-6 gap-1', modePilih && 'pointer-events-none')} onClick={(e) => !modePilih && e.stopPropagation()}>
                           {it.seri.map((x) => {
                             const ini = x.id === k.id;
                             return (
@@ -177,6 +203,11 @@ export function HalamanKegiatan() {
       )}
       {!sampah && <button onClick={() => setSampah(true)} className="mt-5 flex items-center gap-1.5 text-sm font-medium text-stone-400 hover:text-stone-600"><Trash2 className="size-4" /> Lihat kegiatan yang terhapus</button>}
 
+      <BilahPilihan aktif={modePilih} jumlah={terpilih.size} totalTampil={tersaring.length}
+        pilihSemua={() => setTerpilih(new Set(tersaring.map((it) => it.kunci)))} kosongkan={() => setTerpilih(new Set())} batal={selesaiPilih} hapus={() => setKonfirmHapus(true)} />
+      <JendelaHapusBanyak buka={konfirmHapus} tutup={() => setKonfirmHapus(false)} jenis="kegiatan" memuat={menghapus} setuju={hapusBanyak}
+        nama={itemTerpilih.map((it) => (it.seri ? `${it.utama.nama} (bulanan, ${it.seri.length} bulan)` : it.utama.nama))}
+        keterangan={<>Kegiatan beserta penugasan petugasnya dipindahkan ke <b>tempat sampah</b> dan masih bisa dipulihkan. Kegiatan bulanan ikut terhapus semua bulannya. Untuk mengosongkan seluruh data secara permanen, gunakan <b>Pengaturan → Reset data</b>.</>} />
       <FormKegiatan data={form} tutup={() => setForm(null)} setelahBaru={(id) => nav(`/kegiatan/${id}`)} />
       <SalinKegiatan asal={salin} tutup={() => setSalin(null)} />
     </div>
