@@ -54,6 +54,16 @@ sistem.put('/sbml', wajibAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
+/** Hapus SBML satu tahun (mis. karena salah isi) */
+sistem.delete('/sbml/:tahun', wajibAdmin, (c) => {
+  const tahun = Number(c.req.param('tahun'));
+  if (!tahun) throw new GagalError('Tahun tidak valid.');
+  const r = db.prepare('DELETE FROM sbml WHERE tahun = ?').run(tahun);
+  db.prepare('DELETE FROM batas_honor WHERE tahun = ?').run(tahun);
+  catat(c.get('pengguna').nama, 'Hapus SBML', `${tahun} (${r.changes} peran)`);
+  return c.json({ jumlah: Number(r.changes) });
+});
+
 /* ---------- Pengguna ---------- */
 sistem.get('/pengguna', wajibAdmin, (c) => c.json(db.prepare('SELECT id, username, nama, peran, status, dibuat FROM pengguna ORDER BY status DESC, nama').all()));
 sistem.post('/pengguna', wajibAdmin, async (c) => {

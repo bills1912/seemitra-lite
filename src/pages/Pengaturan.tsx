@@ -157,6 +157,32 @@ function TabBatas({ admin }: { admin: boolean }) {
   }, [daftar, tahun]);
   useEffect(() => { if (atur) setAmbang(atur.ambang_sbml); }, [atur]);
   const simpan = useAksi(() => api.put('/sbml', { tahun, nilai }), { sukses: `SBML ${tahun} disimpan.` });
+  const { konfirmasi, beritahu } = useUmpan();
+  const tersimpanTahun = (t: number) => (daftar ?? []).filter((d) => d.tahun === t);
+  /** Hapus SBML satu tahun — dengan popup persetujuan dan tombol Urungkan */
+  const hapusTahun = async (t: number) => {
+    const lama = tersimpanTahun(t);
+    if (!lama.length) return;
+    const ok = await konfirmasi({
+      judul: `Hapus SBML ${t}?`,
+      pesan: (
+        <div className="space-y-2">
+          <p>SBML berikut akan dihapus. Selama belum diisi lagi, aplikasi <b>tidak memberi peringatan SBML</b> untuk kegiatan tahun {t}.</p>
+          <ul className="rounded-xl bg-rose-50 p-3 text-rose-800">{lama.map((d) => <li key={d.peran} className="flex justify-between"><span>{d.peran}</span><b className="angka">{rupiah(d.nominal)}</b></li>)}</ul>
+        </div>
+      ),
+      tombol: `Hapus SBML ${t}`, bahaya: true,
+    });
+    if (!ok) return;
+    try {
+      await api.del(`/sbml/${t}`);
+      segarkan();
+      if (t === tahun) setNilai({});
+      beritahu('sukses', `SBML ${t} dihapus. Silakan isi ulang bila perlu.`, {
+        urungkan: async () => { await api.put('/sbml', { tahun: t, nilai: Object.fromEntries(lama.map((d) => [d.peran, d.nominal])) }); segarkan(); },
+      });
+    } catch (e) { beritahu('galat', (e as Error).message); }
+  };
   const simpanAmbang = useAksi(() => api.put('/pengaturan', { ambang_sbml: ambang }), { sukses: 'Ambang peringatan disimpan.' });
   const peran = [...new Set([...(atur?.daftar_peran ?? []), ...(daftar ?? []).filter((d) => d.tahun === tahun).map((d) => d.peran)])];
   const tahunAda = [...new Set([tahunIni, tahunIni + 1, ...(daftar ?? []).map((d) => d.tahun)])].sort((a, b) => b - a);
@@ -166,7 +192,11 @@ function TabBatas({ admin }: { admin: boolean }) {
     <div className="space-y-5">
       <Panel judul="SBML honor mitra per bulan, per peran"
         ket={<>Batas honor <b>berbeda untuk setiap peran</b> dan dicek <b>per bulan kegiatan</b>: honor seorang mitra untuk satu peran di satu bulan (dari semua kegiatan) dibandingkan dengan SBML peran tersebut. Penugasan tetap bisa disimpan setelah peringatan dikonfirmasi.</>}
-        kaki={admin ? <Tombol memuat={simpan.isPending} onClick={() => simpan.mutate(undefined)}>Simpan SBML {tahun}</Tombol> : undefined}>
+        kaki={admin ? <>
+          {tersimpanTahun(tahun).length > 0 && <Tombol varian="hantu" className="mr-auto text-rose-600 hover:bg-rose-50 hover:text-rose-700" ikon={<Trash2 className="size-4" />} onClick={() => hapusTahun(tahun)}>Hapus SBML {tahun}</Tombol>}
+          <Tombol varian="kedua" ikon={<RotateCcw className="size-4" />} onClick={() => setNilai(Object.fromEntries(tersimpanTahun(tahun).map((d) => [d.peran, d.nominal])))}>Kembalikan isian</Tombol>
+          <Tombol memuat={simpan.isPending} onClick={() => simpan.mutate(undefined)}>Simpan SBML {tahun}</Tombol>
+        </> : undefined}>
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <span className="text-sm font-semibold text-stone-600">Tahun</span>
           <Pilihan nilai={String(tahun)} ubah={(v) => setTahun(Number(v))} opsi={tahunAda.map(String)} className="w-36" />
@@ -194,12 +224,20 @@ function TabBatas({ admin }: { admin: boolean }) {
         <Panel judul="Ringkasan SBML tersimpan">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-xs font-bold uppercase tracking-wide text-stone-400"><th className="pb-2">Tahun</th>{peran.map((p) => <th key={p} className="pb-2 text-right">{p}</th>)}</tr></thead>
+              <thead><tr className="text-left text-xs font-bold uppercase tracking-wide text-stone-400"><th className="pb-2">Tahun</th>{peran.map((p) => <th key={p} className="pb-2 text-right">{p}</th>)}{admin && <th className="pb-2 text-right">Aksi</th>}</tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {perTahun.map(({ t, isi }) => (
                   <tr key={t} className="cursor-pointer hover:bg-stone-50" onClick={() => setTahun(t)}>
                     <td className="py-2.5 font-bold text-stone-800">{t}</td>
                     {peran.map((p) => { const v = isi.find((x) => x.peran === p)?.nominal; return <td key={p} className="angka py-2.5 text-right text-stone-700">{v ? rupiah(v) : <span className="text-stone-300">—</span>}</td>; })}
+                    {admin && (
+                      <td className="py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
+                        <span className="inline-flex">
+                          <TombolIkon label={`Ubah SBML ${t}`} onClick={() => { setTahun(t); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><Pencil className="size-4" /></TombolIkon>
+                          <TombolIkon label={`Hapus SBML ${t}`} onClick={() => hapusTahun(t)} className="hover:bg-rose-50 hover:text-rose-600"><Trash2 className="size-4" /></TombolIkon>
+                        </span>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -403,18 +441,19 @@ function TabCadangan() {
 
 /** Reset seluruh data mitra dan/atau kegiatan — dengan persetujuan berlapis & cadangan otomatis */
 function TabReset() {
-  const { data: ringkas } = useQuery({ queryKey: ['reset-ringkasan'], queryFn: () => api.get<{ mitra: number; kegiatan: number; penugasan: number }>('/reset/ringkasan') });
-  const [pilih, setPilih] = useState({ mitra: false, kegiatan: false });
+  const { data: ringkas } = useQuery({ queryKey: ['reset-ringkasan'], queryFn: () => api.get<{ mitra: number; kegiatan: number; penugasan: number; sbml: number }>('/reset/ringkasan') });
+  const [pilih, setPilih] = useState({ mitra: false, kegiatan: false, sbml: false });
   const [buka, setBuka] = useState(false);
   const [paham, setPaham] = useState(false);
   const [paham2, setPaham2] = useState(false);
   const [ketik, setKetik] = useState('');
   const [, setParam] = useSearchParams();
   const { beritahu } = useUmpan();
-  const reset = useAksi(() => api.post<{ mitra?: number; kegiatan?: number; penugasan: number; cadangan: string }>('/reset', { ...pilih, konfirmasi: ketik }), {
+  const reset = useAksi(() => api.post<{ mitra?: number; kegiatan?: number; sbml?: number; penugasan?: number; cadangan: string }>('/reset', { ...pilih, konfirmasi: ketik }), {
     setelah: (r) => {
       setBuka(false);
-      beritahu('sukses', <>Reset selesai: {r.mitra !== undefined && <>{r.mitra} mitra, </>}{r.kegiatan !== undefined && <>{r.kegiatan} kegiatan, </>}{r.penugasan} penugasan dihapus. Cadangan otomatis: <b>{r.cadangan}</b></>);
+      beritahu('sukses', <>Reset selesai: {[r.mitra !== undefined && `${r.mitra} mitra`, r.kegiatan !== undefined && `${r.kegiatan} kegiatan`, r.penugasan !== undefined && `${r.penugasan} penugasan`, r.sbml !== undefined && `${r.sbml} isian SBML`].filter(Boolean).join(', ')} dihapus. Cadangan otomatis: <b>{r.cadangan}</b></>);
+      setPilih({ mitra: false, kegiatan: false, sbml: false });
     },
   });
   const bukaJendela = () => { setPaham(false); setPaham2(false); setKetik(''); setBuka(true); };
@@ -422,17 +461,19 @@ function TabReset() {
   const yangDihapus = [
     pilih.mitra && `${ringkas?.mitra ?? 0} mitra (termasuk yang di tempat sampah)`,
     pilih.kegiatan && `${ringkas?.kegiatan ?? 0} kegiatan (termasuk yang di tempat sampah)`,
-    `${ringkas?.penugasan ?? 0} penugasan petugas beserta nomor SPK/BAST yang sudah diberikan`,
+    (pilih.mitra || pilih.kegiatan) && `${ringkas?.penugasan ?? 0} penugasan petugas beserta nomor SPK/BAST yang sudah diberikan`,
+    pilih.sbml && `SBML semua tahun (${ringkas?.sbml ?? 0} tahun) — peringatan SBML berhenti sampai diisi ulang`,
   ].filter(Boolean) as string[];
+  const adaPilihan = pilih.mitra || pilih.kegiatan || pilih.sbml;
 
   return (
-    <Panel judul="Reset data" ket="Menghapus PERMANEN seluruh data mitra dan/atau kegiatan, mis. untuk memulai tahun baru atau setelah uji coba. Pengaturan, pengguna, SBML, dan template tidak ikut terhapus.">
-      <div className="mb-5 grid gap-3 sm:grid-cols-2">
-        {([['mitra', 'Semua mitra', ringkas?.mitra], ['kegiatan', 'Semua kegiatan', ringkas?.kegiatan]] as const).map(([k, l, n]) => (
+    <Panel judul="Reset data" ket="Menghapus PERMANEN data yang dipilih, mis. untuk memulai tahun baru, setelah uji coba, atau bila SBML salah isi. Pengaturan kantor, pengguna, dan template tidak ikut terhapus.">
+      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+        {([['mitra', 'Semua mitra', ringkas?.mitra, 'data · penugasannya ikut terhapus'], ['kegiatan', 'Semua kegiatan', ringkas?.kegiatan, 'data · penugasannya ikut terhapus'], ['sbml', 'Semua SBML', ringkas?.sbml, 'tahun · mitra & kegiatan tidak disentuh']] as const).map(([k, l, n, ket]) => (
           <button key={k} type="button" onClick={() => setPilih({ ...pilih, [k]: !pilih[k] })}
             className={cx('flex items-center gap-3 rounded-2xl border-2 p-4 text-left transition', pilih[k] ? 'border-rose-400 bg-rose-50' : 'border-stone-200 hover:border-stone-300')}>
             <Kotak aktif={pilih[k]} ubah={() => setPilih({ ...pilih, [k]: !pilih[k] })} />
-            <div><div className="font-bold text-stone-800">{l}</div><div className="text-xs text-stone-500">{n ?? 0} data · penugasannya ikut terhapus</div></div>
+            <div><div className="font-bold text-stone-800">{l}</div><div className="text-xs text-stone-500">{n ?? 0} {ket}</div></div>
           </button>
         ))}
       </div>
@@ -440,7 +481,8 @@ function TabReset() {
         Sebelum menghapus, aplikasi otomatis membuat <b>file cadangan</b>. Bila salah, data bisa dikembalikan dari{' '}
         <button className="font-bold underline" onClick={() => setParam({ tab: 'cadangan' }, { replace: true })}>Cadangan data</button>.
       </div>
-      <Tombol varian="bahaya" disabled={!pilih.mitra && !pilih.kegiatan} ikon={<AlertOctagon className="size-4" />} onClick={bukaJendela}>Reset data terpilih…</Tombol>
+      <p className="mb-4 text-xs text-stone-500">Hanya ingin menghapus SBML satu tahun? Gunakan tombol hapus di tab <button className="font-semibold text-brand-700 underline" onClick={() => setParam({ tab: 'batas' }, { replace: true })}>Batas honor (SBML)</button>.</p>
+      <Tombol varian="bahaya" disabled={!adaPilihan} ikon={<AlertOctagon className="size-4" />} onClick={bukaJendela}>Reset data terpilih…</Tombol>
 
       <Jendela buka={buka} tutup={() => setBuka(false)} judul="Konfirmasi reset data" sub="Tindakan ini menghapus data secara permanen."
         kaki={<>

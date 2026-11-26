@@ -631,6 +631,7 @@ data.get('/reset/ringkasan', wajibAdmin, (c) => {
   const n = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
   return c.json({
     mitra: n('SELECT COUNT(*) n FROM mitra'), kegiatan: n('SELECT COUNT(*) n FROM kegiatan'), penugasan: n('SELECT COUNT(*) n FROM penugasan'),
+    sbml: n('SELECT COUNT(DISTINCT tahun) n FROM sbml'),
   });
 });
 
@@ -639,19 +640,24 @@ data.get('/reset/ringkasan', wajibAdmin, (c) => {
  * Sebelum menghapus, server selalu membuat file cadangan sehingga masih bisa dipulihkan dari Pengaturan → Cadangan data.
  */
 data.post('/reset', wajibAdmin, async (c) => {
-  const b = (await c.req.json()) as { mitra?: boolean; kegiatan?: boolean; konfirmasi?: string };
-  if (!b.mitra && !b.kegiatan) throw new GagalError('Pilih data yang ingin direset.');
+  const b = (await c.req.json()) as { mitra?: boolean; kegiatan?: boolean; sbml?: boolean; konfirmasi?: string };
+  if (!b.mitra && !b.kegiatan && !b.sbml) throw new GagalError('Pilih data yang ingin direset.');
   if (String(b.konfirmasi ?? '').trim().toUpperCase() !== 'HAPUS SEMUA') throw new GagalError('Ketik HAPUS SEMUA untuk mengonfirmasi.');
   const cadangan = simpanCadanganKeFile('sebelum-reset');
   const hasil = transaksi(() => {
     const out: Record<string, number> = {};
+    if (b.sbml) {
+      out.sbml = Number(db.prepare('DELETE FROM sbml').run().changes);
+      db.exec('DELETE FROM batas_honor');
+    }
+    if (!b.mitra && !b.kegiatan) return out; // hanya SBML: data mitra & kegiatan tidak disentuh
     out.penugasan = Number(db.prepare('DELETE FROM penugasan').run().changes);
     db.exec('DELETE FROM nomor_dokumen; DELETE FROM spk_bulan;');
     if (b.kegiatan) out.kegiatan = Number(db.prepare('DELETE FROM kegiatan').run().changes);
     if (b.mitra) out.mitra = Number(db.prepare('DELETE FROM mitra').run().changes);
     return out;
   });
-  catat(c.get('pengguna').nama, 'RESET DATA', `${b.mitra ? 'mitra ' : ''}${b.kegiatan ? 'kegiatan ' : ''}— cadangan: ${cadangan}`);
+  catat(c.get('pengguna').nama, 'RESET DATA', `${b.mitra ? 'mitra ' : ''}${b.kegiatan ? 'kegiatan ' : ''}${b.sbml ? 'SBML ' : ''}— cadangan: ${cadangan}`);
   return c.json({ ...hasil, cadangan });
 });
 
