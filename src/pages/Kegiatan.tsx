@@ -7,7 +7,8 @@ import { api, segarkan } from '../lib/api';
 import type { Kegiatan } from '../lib/types';
 import { useAksi, usePengaturan } from '../lib/hooks';
 import { useUmpan } from '../components/umpan';
-import { Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Pilihan, Segmen, Tombol, TombolIkon, cx } from '../components/ui';
+import { Pilihan, PilihTanggal, PilihBulanIsian, IsianSaran } from '../components/pemilih';
+import { Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Segmen, Tombol, TombolIkon, cx } from '../components/ui';
 import { LABEL_STATUS, cocok, geserBulan, labelBulan, rentang, rupiah, statusKegiatan, tambahHari, type StatusKegiatan } from '../lib/format';
 
 const WARNA_STATUS: Record<StatusKegiatan, 'hijau' | 'biru' | 'abu'> = { berjalan: 'hijau', akan: 'biru', selesai: 'abu' };
@@ -152,15 +153,14 @@ export function FormKegiatan({ data, tutup, setelahBaru }: { data: Partial<Kegia
           <Segmen id="jenis" nilai={f.jenis ?? 'Survei'} ubah={(v) => setF({ ...f, jenis: v })} opsi={(atur?.daftar_jenis ?? ['Survei', 'Sensus']).map((j) => ({ nilai: j, label: j }))} />
         </Kolom>
         <Kolom label="Singkatan" petunjuk="Opsional, untuk pencarian."><Masukan value={f.singkatan ?? ''} onChange={(e) => setF({ ...f, singkatan: e.target.value })} placeholder="mis. SUSENAS" /></Kolom>
-        <Kolom label="Tanggal mulai" wajib><Masukan type="date" value={f.tanggal_mulai ?? ''} onChange={(e) => setF({ ...f, tanggal_mulai: e.target.value, tanggal_selesai: f.tanggal_selesai || e.target.value, bulan_honor: bulanManual ? f.bulan_honor : (f.tanggal_selesai || e.target.value).slice(0, 7) })} /></Kolom>
-        <Kolom label="Tanggal selesai" wajib><Masukan type="date" value={f.tanggal_selesai ?? ''} min={f.tanggal_mulai} onChange={(e) => ubahSelesai(e.target.value)} /></Kolom>
+        <Kolom label="Tanggal mulai" wajib><PilihTanggal nilai={f.tanggal_mulai} ubah={(v) => setF({ ...f, tanggal_mulai: v, tanggal_selesai: f.tanggal_selesai && f.tanggal_selesai >= v ? f.tanggal_selesai : v, bulan_honor: bulanManual ? f.bulan_honor : (f.tanggal_selesai && f.tanggal_selesai >= v ? f.tanggal_selesai : v).slice(0, 7) })} /></Kolom>
+        <Kolom label="Tanggal selesai" wajib><PilihTanggal nilai={f.tanggal_selesai} min={f.tanggal_mulai} ubah={ubahSelesai} /></Kolom>
         <Kolom label="Bulan pembayaran honor" wajib petunjuk="Menentukan masuk ke SPK/BAST & rekap bulan apa. Otomatis mengikuti tanggal selesai.">
-          <Masukan type="month" value={f.bulan_honor ?? ''} onChange={(e) => { setBulanManual(true); setF({ ...f, bulan_honor: e.target.value }); }} />
+          <PilihBulanIsian nilai={f.bulan_honor} ubah={(v) => { setBulanManual(true); setF({ ...f, bulan_honor: v }); }} />
         </Kolom>
         <Kolom label="Target jumlah petugas"><Masukan type="number" min={0} value={f.target_petugas ?? ''} onChange={(e) => setF({ ...f, target_petugas: e.target.value ? Number(e.target.value) : null })} placeholder="opsional" /></Kolom>
         <Kolom label="Satuan beban kerja" petunjuk="Mis. Dokumen, Ruta, BS.">
-          <Masukan list="daftar-satuan" value={f.satuan ?? ''} onChange={(e) => setF({ ...f, satuan: e.target.value })} />
-          <datalist id="daftar-satuan">{atur?.daftar_satuan.map((s) => <option key={s} value={s} />)}</datalist>
+          <IsianSaran nilai={f.satuan ?? ''} ubah={(v) => setF({ ...f, satuan: v })} saran={atur?.daftar_satuan ?? []} />
         </Kolom>
         <Kolom label="Kode beban anggaran (MAK)"><Masukan value={f.mak ?? ''} onChange={(e) => setF({ ...f, mak: e.target.value })} placeholder="054.01.GG.xxxx.xxx.005.A.521213" /></Kolom>
 
@@ -213,9 +213,9 @@ export function SalinKegiatan({ asal, tutup }: { asal: Kegiatan | null; tutup: (
       kaki={<><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol memuat={kirim.isPending} ikon={<Copy className="size-4" />} onClick={() => kirim.mutate(undefined)}>Salin</Tombol></>}>
       <div className="grid gap-4 sm:grid-cols-2">
         <Kolom label="Nama kegiatan baru" className="sm:col-span-2"><Masukan value={f.nama} onChange={(e) => setF({ ...f, nama: e.target.value })} /></Kolom>
-        <Kolom label="Tanggal mulai"><Masukan type="date" value={f.tanggal_mulai} onChange={(e) => setF({ ...f, tanggal_mulai: e.target.value })} /></Kolom>
-        <Kolom label="Tanggal selesai"><Masukan type="date" value={f.tanggal_selesai} onChange={(e) => setF({ ...f, tanggal_selesai: e.target.value, bulan_honor: e.target.value.slice(0, 7) })} /></Kolom>
-        <Kolom label="Bulan honor"><Masukan type="month" value={f.bulan_honor} onChange={(e) => setF({ ...f, bulan_honor: e.target.value })} /></Kolom>
+        <Kolom label="Tanggal mulai"><PilihTanggal nilai={f.tanggal_mulai} ubah={(v) => setF({ ...f, tanggal_mulai: v })} /></Kolom>
+        <Kolom label="Tanggal selesai"><PilihTanggal nilai={f.tanggal_selesai} min={f.tanggal_mulai} ubah={(v) => setF({ ...f, tanggal_selesai: v, bulan_honor: v.slice(0, 7) })} /></Kolom>
+        <Kolom label="Bulan honor"><PilihBulanIsian nilai={f.bulan_honor} ubah={(v) => setF({ ...f, bulan_honor: v })} /></Kolom>
         <div className="space-y-3 sm:col-span-2">
           <Kotak aktif={f.salin_petugas} ubah={(v) => setF({ ...f, salin_petugas: v })} label={<span>Salin juga daftar petugas <span className="text-stone-400">({asal?.jumlah_petugas ?? 0} mitra)</span></span>} />
           {f.salin_petugas && <div className="pl-7"><Kotak aktif={f.salin_volume} ubah={(v) => setF({ ...f, salin_volume: v })} label="Salin volume beban kerja (jika tidak, volume diisi 0)" /></div>}

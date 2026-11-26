@@ -9,7 +9,8 @@ import { api, kirimFile, queryClient, segarkan, unduhFile } from '../lib/api';
 import type { Pengaturan, Pengguna } from '../lib/types';
 import { useAksi, usePengaturan, useSaya } from '../lib/hooks';
 import { useUmpan } from '../components/umpan';
-import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Lencana, Masukan, MasukanRupiah, Memuat, Pilihan, Tombol, TombolIkon, cx, pegas } from '../components/ui';
+import { Pilihan } from '../components/pemilih';
+import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Lencana, Masukan, MasukanRupiah, Memuat, Tombol, TombolIkon, cx, pegas } from '../components/ui';
 import { rupiah, tanggal } from '../lib/format';
 
 const TAB = [

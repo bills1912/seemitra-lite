@@ -40,5 +40,5 @@ input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: none; }
 }
-.masuk-halaman { animation: masuk-halaman 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.masuk-halaman { animation: masuk-halaman 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 @media (prefers-reduced-motion: reduce) { .masuk-halaman { animation: none; } }

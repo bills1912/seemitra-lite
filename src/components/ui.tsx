@@ -3,8 +3,9 @@
  * Ubah warna/bentuk di sini, dan seluruh aplikasi ikut berubah.
  */
 import { forwardRef, useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, animate, motion, useMotionValue, useTransform, type HTMLMotionProps } from 'motion/react';
-import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Search, X } from 'lucide-react';
 import { BULAN_PENDEK, inisial, labelBulan, warnaAvatar } from '../lib/format';
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
@@ -90,20 +91,6 @@ export function MasukanRupiah({ nilai, ubah, className, ...p }: { nilai: number 
         onChange={(e) => ubah(Number(e.target.value.replace(/\D/g, '')) || 0)}
         {...p}
       />
-    </div>
-  );
-}
-
-export function Pilihan({ nilai, ubah, opsi, className, kosong }: {
-  nilai: string; ubah: (v: string) => void; opsi: (string | { nilai: string; label: string })[]; className?: string; kosong?: string;
-}) {
-  return (
-    <div className={cx('relative', className)}>
-      <select className="input cursor-pointer appearance-none pr-9" value={nilai} onChange={(e) => ubah(e.target.value)}>
-        {kosong !== undefined && <option value="">{kosong}</option>}
-        {opsi.map((o) => typeof o === 'string' ? <option key={o} value={o}>{o}</option> : <option key={o.nilai} value={o.nilai}>{o.label}</option>)}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-stone-400" />
     </div>
   );
 }
@@ -256,7 +243,8 @@ export function Jendela({ buka, tutup, judul, sub, children, kaki, lebar = 'max-
   buka: boolean; tutup: () => void; judul: ReactNode; sub?: ReactNode; children: ReactNode; kaki?: ReactNode; lebar?: string;
 }) {
   useEsc(buka, tutup);
-  return (
+  // Dirender ke <body> agar selalu menutupi seluruh layar, apa pun induknya
+  return createPortal(
     <AnimatePresence>
       {buka && (
         <motion.div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -281,13 +269,14 @@ export function Jendela({ buka, tutup, judul, sub, children, kaki, lebar = 'max-
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
 export function Laci({ buka, tutup, children, lebar = 'max-w-xl' }: { buka: boolean; tutup: () => void; children: ReactNode; lebar?: string }) {
   useEsc(buka, tutup);
-  return (
+  return createPortal(
     <AnimatePresence>
       {buka && (
         <motion.div className="fixed inset-0 z-40" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -301,7 +290,8 @@ export function Laci({ buka, tutup, children, lebar = 'max-w-xl' }: { buka: bool
           </motion.aside>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 

@@ -5,8 +5,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle2, FileCheck2, FileSignature, RotateCcw, Settings2, Users } from 'lucide-react';
 import { api, segarkan, unduhFile } from '../lib/api';
 import { useUmpan } from '../components/umpan';
-import { Avatar, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Masukan, Memuat, PemilihBulan, Pilihan, Tombol, cx } from '../components/ui';
-import { akhirBulan, bulanIni, cocok, labelBulan, rupiah, tanggal } from '../lib/format';
+import { Pilihan, PilihTanggal } from '../components/pemilih';
+import { Avatar, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Memuat, PemilihBulan, Tombol, cx } from '../components/ui';
+import { akhirBulan, bulanIni, cocok, labelBulan, rupiah } from '../lib/format';
 
 type Pratinjau = {
   bulan: string;
@@ -88,9 +89,9 @@ export function Dokumen() {
             <KartuDokumen judul="Surat Perjanjian Kerja (SPK)" ikon={<FileSignature className="size-5" />} warna="from-teal-500 to-emerald-500"
               ket="Satu SPK per mitra, berisi semua kegiatannya di bulan ini. Nomor urut tetap sama walau dibuat ulang.">
               <div className="grid gap-4 sm:grid-cols-3">
-                <Kolom label="Tanggal SPK" petunjuk={tglSpk ? tanggal(tglSpk) : undefined}><Masukan type="date" value={tglSpk} onChange={(e) => setTglSpk(e.target.value)} /></Kolom>
-                <Kolom label="Jangka waktu mulai"><Masukan type="date" value={mulai} onChange={(e) => setMulai(e.target.value)} /></Kolom>
-                <Kolom label="Jangka waktu selesai"><Masukan type="date" value={selesai} onChange={(e) => setSelesai(e.target.value)} /></Kolom>
+                <Kolom label="Tanggal SPK"><PilihTanggal nilai={tglSpk} ubah={setTglSpk} /></Kolom>
+                <Kolom label="Jangka waktu mulai"><PilihTanggal nilai={mulai} ubah={setMulai} /></Kolom>
+                <Kolom label="Jangka waktu selesai"><PilihTanggal nilai={selesai} min={mulai} ubah={setSelesai} /></Kolom>
               </div>
               <Tombol className="mt-5 h-11 w-full" memuat={proses === 'spk'} disabled={!terpilih.length || !!proses} onClick={() => buat('spk')} ikon={<FileSignature className="size-4" />}>
                 Buat SPK untuk {terpilih.length} mitra
@@ -100,8 +101,8 @@ export function Dokumen() {
             <KartuDokumen judul="Berita Acara Serah Terima (BAST)" ikon={<FileCheck2 className="size-5" />} warna="from-sky-500 to-indigo-500"
               ket="Nomor BAST mengikuti nomor SPK mitra yang sama. Bisa dibuat per kegiatan atau semua sekaligus.">
               <div className="grid gap-4 sm:grid-cols-3">
-                <Kolom label="Tanggal BAST" petunjuk={tglBast ? tanggal(tglBast) : undefined}><Masukan type="date" value={tglBast} onChange={(e) => setTglBast(e.target.value)} /></Kolom>
-                <Kolom label="Tanggal SPK terkait" petunjuk={data.spk ? 'otomatis dari SPK terakhir' : 'samakan dengan tanggal SPK'}><Masukan type="date" value={tglSpkBast} onChange={(e) => setTglSpkBast(e.target.value)} /></Kolom>
+                <Kolom label="Tanggal BAST"><PilihTanggal nilai={tglBast} ubah={setTglBast} /></Kolom>
+                <Kolom label="Tanggal SPK terkait" petunjuk={data.spk ? 'otomatis dari SPK terakhir' : 'samakan dengan tanggal SPK'}><PilihTanggal nilai={tglSpkBast} ubah={setTglSpkBast} /></Kolom>
                 <Kolom label="Kegiatan">
                   <Pilihan nilai={kegiatan} ubah={setKegiatan} kosong="Semua kegiatan" opsi={(rekap?.kegiatan ?? []).map((k) => ({ nilai: String(k.id), label: k.nama }))} />
                 </Kolom>

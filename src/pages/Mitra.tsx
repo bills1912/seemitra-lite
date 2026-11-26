@@ -9,8 +9,9 @@ import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Mitra } from '../lib/types';
 import { useAksi } from '../lib/hooks';
 import { useUmpan } from '../components/umpan';
+import { Pilihan, IsianSaran } from '../components/pemilih';
 import {
-  AreaUnggah, Avatar, Batang, Laci as LaciDetail, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, KotakCari, Lencana, Masukan, Memuat, Pilihan, Saklar, Segmen, Tombol, TombolIkon, cx,
+  AreaUnggah, Avatar, Batang, Laci as LaciDetail, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, KotakCari, Lencana, Masukan, Memuat, Saklar, Segmen, Tombol, TombolIkon, cx,
 } from '../components/ui';
 import { bulanIni, cocok, labelBulan, rupiah, tanggal } from '../lib/format';
 
@@ -159,8 +160,7 @@ export function FormMitra({ data, tutup, daftarKec }: { data: Partial<Mitra> | n
         <Kolom label="Email"><Masukan type="email" value={f.email ?? ''} onChange={set('email')} /></Kolom>
         <Kolom label="Alamat lengkap" className="sm:col-span-2" petunjuk="Dipakai di SPK & BAST."><Masukan value={f.alamat ?? ''} onChange={set('alamat')} /></Kolom>
         <Kolom label="Kecamatan">
-          <Masukan list="daftar-kec" value={f.kecamatan ?? ''} onChange={set('kecamatan')} />
-          <datalist id="daftar-kec">{daftarKec.map((k) => <option key={k} value={k} />)}</datalist>
+          <IsianSaran nilai={f.kecamatan ?? ''} ubah={(v) => setF((x) => ({ ...x, kecamatan: v }))} saran={daftarKec} />
         </Kolom>
         <Kolom label="Desa / kelurahan"><Masukan value={f.desa ?? ''} onChange={set('desa')} /></Kolom>
         <Bagian judul="Pembayaran" />

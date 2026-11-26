@@ -1,15 +1,32 @@
 /** Tata letak utama: menu samping, bilah atas, dan pencarian cepat (Ctrl+K). */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  BookOpen, CalendarDays, CornerDownLeft, FileSignature, Home, LogOut, Menu, Plus, Search, Settings, Users, Wallet, X,
+  BookOpen, CalendarDays, ChevronsLeft, CornerDownLeft, FileSignature, Home, LogOut, Menu, Plus, Search, Settings, Users, Wallet, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Pengguna } from '../lib/types';
 import { Avatar, cx, pegas } from './ui';
 import { labelBulan } from '../lib/format';
+
+const LEBAR_PENUH = 256;
+const LEBAR_RINGKAS = 84;
+
+/** Keterangan kecil yang muncul di kanan saat ikon disorot (dipakai saat menu dikecilkan). */
+function Tip({ label, aktif = true, children }: { label: string; aktif?: boolean; children: ReactNode }) {
+  if (!aktif) return <>{children}</>;
+  return (
+    <div className="group/tip relative">
+      {children}
+      <span role="tooltip" className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-x-1 -translate-y-1/2 whitespace-nowrap rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition duration-150 group-hover/tip:translate-x-0 group-hover/tip:opacity-100 group-focus-within/tip:translate-x-0 group-focus-within/tip:opacity-100">
+        {label}
+        <span className="absolute -left-1 top-1/2 size-2 -translate-y-1/2 rotate-45 bg-stone-900" />
+      </span>
+    </div>
+  );
+}
 
 export const MENU = [
   { ke: '/', label: 'Beranda', ikon: Home },
@@ -23,12 +40,16 @@ export const MENU = [
 
 export function Tata({ pengguna, children }: { pengguna: Pengguna; children: ReactNode }) {
   const [laci, setLaci] = useState(false);
+  // Menu samping bisa dikecilkan (hanya ikon). Pilihan disimpan di browser ini.
+  const [ringkas, setRingkas] = useState(() => { try { return localStorage.getItem('seemitra-menu-ringkas') === '1'; } catch { return false; } });
+  const ubahRingkas = (v: boolean) => { setRingkas(v); try { localStorage.setItem('seemitra-menu-ringkas', v ? '1' : '0'); } catch { /* abaikan */ } };
   const [cari, setCari] = useState(false);
   const lokasi = useLocation();
   useEffect(() => setLaci(false), [lokasi.pathname]);
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setCari((v) => !v); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); setRingkas((v) => { try { localStorage.setItem('seemitra-menu-ringkas', v ? '0' : '1'); } catch { /* */ } return !v; }); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -42,46 +63,77 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
     window.location.replace('/');
   };
 
-  const isiMenu = (
+  const isiMenu = (ringkas: boolean) => (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 px-5 pb-6 pt-6">
-        <img src="/logo.svg" alt="" className="size-10" />
-        <div>
-          <div className="text-[17px] font-extrabold leading-tight tracking-tight text-stone-900">Seemitra <span className="text-brand-600">Lite</span></div>
-          <div className="text-xs font-medium text-stone-400">Administrasi Mitra</div>
-        </div>
+      <div className={cx('flex items-center gap-3 pb-6 pt-6', ringkas ? 'justify-center px-0' : 'px-5')}>
+        <img src="/logo.svg" alt="" className="size-10 shrink-0" />
+        {!ringkas && (
+          <motion.div initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.08 }} className="min-w-0 whitespace-nowrap">
+            <div className="text-[17px] font-extrabold leading-tight tracking-tight text-stone-900">Seemitra <span className="text-brand-600">Lite</span></div>
+            <div className="text-xs font-medium text-stone-400">Administrasi Mitra</div>
+          </motion.div>
+        )}
       </div>
-      <button onClick={() => setCari(true)} className="mx-4 mb-4 flex items-center gap-2.5 rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-stone-400 transition hover:border-stone-300">
-        <Search className="size-4" /> <span className="flex-1 text-left">Cari cepat…</span>
-        <kbd className="rounded-md bg-stone-100 px-1.5 py-0.5 text-[11px] font-semibold text-stone-500">Ctrl K</kbd>
-      </button>
-      <nav className="flex-1 space-y-0.5 px-3">
+      {ringkas ? (
+        <div className="mb-4 flex justify-center">
+          <Tip label="Cari cepat (Ctrl K)">
+            <button onClick={() => setCari(true)} className="grid size-11 place-items-center rounded-xl border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:text-stone-800">
+              <Search className="size-[18px]" />
+            </button>
+          </Tip>
+        </div>
+      ) : (
+        <button onClick={() => setCari(true)} className="mx-4 mb-4 flex items-center gap-2.5 whitespace-nowrap rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-stone-400 transition hover:border-stone-300">
+          <Search className="size-4" /> <span className="flex-1 text-left">Cari cepat…</span>
+          <kbd className="rounded-md bg-stone-100 px-1.5 py-0.5 text-[11px] font-semibold text-stone-500">Ctrl K</kbd>
+        </button>
+      )}
+      <nav className={cx('flex-1 space-y-0.5', ringkas ? 'px-3' : 'px-3')}>
         {MENU.map((m) => (
-          <NavLink key={m.ke} to={m.ke} end={m.ke === '/'} className="relative block">
-            {({ isActive }) => (
-              <span className={cx('relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-semibold transition-colors', isActive ? 'text-brand-800' : 'text-stone-500 hover:bg-stone-100/70 hover:text-stone-800')}>
-                {isActive && <motion.span layoutId="menu-aktif" transition={pegas} className="absolute inset-0 rounded-xl bg-brand-100/70" />}
-                <m.ikon className="relative size-[19px]" strokeWidth={isActive ? 2.4 : 2} />
-                <span className="relative">{m.label}</span>
-              </span>
-            )}
-          </NavLink>
+          <Tip key={m.ke} label={m.label} aktif={ringkas}>
+            <NavLink to={m.ke} end={m.ke === '/'} className="relative block" aria-label={m.label}>
+              {({ isActive }) => (
+                <span className={cx('relative flex items-center gap-3 rounded-xl py-2.5 text-[15px] font-semibold transition-colors', ringkas ? 'justify-center px-0' : 'px-3',
+                  isActive ? 'text-brand-800' : 'text-stone-500 hover:bg-stone-100/70 hover:text-stone-800')}>
+                  {isActive && <motion.span layoutId={ringkas ? 'menu-aktif-ringkas' : 'menu-aktif'} transition={pegas} className="absolute inset-0 rounded-xl bg-brand-100/70" />}
+                  <m.ikon className="relative size-[19px] shrink-0" strokeWidth={isActive ? 2.4 : 2} />
+                  {!ringkas && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.06 }} className="relative whitespace-nowrap">{m.label}</motion.span>}
+                </span>
+              )}
+            </NavLink>
+          </Tip>
         ))}
       </nav>
-      <div className="m-3 flex items-center gap-3 rounded-2xl bg-white p-3 shadow-lembut">
-        <Avatar nama={pengguna.nama} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-bold text-stone-800">{pengguna.nama}</div>
-          <div className="text-xs capitalize text-stone-400">{pengguna.peran}</div>
+      {ringkas ? (
+        <div className="mb-4 flex flex-col items-center gap-2">
+          <Tip label={`${pengguna.nama} · ${pengguna.peran}`}><span className="block"><Avatar nama={pengguna.nama} /></span></Tip>
+          <Tip label="Keluar">
+            <button onClick={keluar} disabled={keluarProses} className="rounded-lg p-2 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"><LogOut className="size-4" /></button>
+          </Tip>
         </div>
-        <button onClick={keluar} disabled={keluarProses} title="Keluar" className="rounded-lg p-2 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"><LogOut className="size-4" /></button>
-      </div>
+      ) : (
+        <div className="m-3 flex items-center gap-3 rounded-2xl bg-white p-3 shadow-lembut">
+          <Avatar nama={pengguna.nama} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-bold text-stone-800">{pengguna.nama}</div>
+            <div className="text-xs capitalize text-stone-400">{pengguna.peran}</div>
+          </div>
+          <button onClick={keluar} disabled={keluarProses} title="Keluar" className="rounded-lg p-2 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"><LogOut className="size-4" /></button>
+        </div>
+      )}
     </div>
   );
 
   return (
     <div className="min-h-dvh">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200/70 bg-stone-50/80 lg:block">{isiMenu}</aside>
+      <motion.aside initial={false} animate={{ width: ringkas ? LEBAR_RINGKAS : LEBAR_PENUH }} transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+        className="fixed inset-y-0 left-0 z-30 hidden border-r border-stone-200/70 bg-stone-50/95 backdrop-blur lg:block">
+        {isiMenu(ringkas)}
+        <button onClick={() => ubahRingkas(!ringkas)} title={ringkas ? 'Lebarkan menu (Ctrl B)' : 'Kecilkan menu (Ctrl B)'} aria-label={ringkas ? 'Lebarkan menu' : 'Kecilkan menu'}
+          className="absolute -right-3.5 top-9 grid size-7 place-items-center rounded-full border border-stone-200 bg-white text-stone-500 shadow-lembut transition hover:scale-110 hover:border-brand-300 hover:text-brand-700">
+          <motion.span animate={{ rotate: ringkas ? 180 : 0 }} transition={pegas}><ChevronsLeft className="size-4" /></motion.span>
+        </button>
+      </motion.aside>
 
       {/* bilah atas (layar kecil) */}
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-stone-200/70 bg-kanvas/85 px-4 py-3 backdrop-blur lg:hidden">
@@ -97,13 +149,13 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
             <motion.aside initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', stiffness: 330, damping: 34 }}
               className="absolute inset-y-0 left-0 w-72 bg-stone-50">
               <button onClick={() => setLaci(false)} className="absolute right-3 top-3 rounded-xl p-2 hover:bg-stone-200"><X className="size-5" /></button>
-              {isiMenu}
+              {isiMenu(false)}
             </motion.aside>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <main className="lg:pl-64">
+      <main className="transition-[padding] duration-300 ease-out lg:pl-[var(--lebar-menu)]" style={{ '--lebar-menu': `${ringkas ? LEBAR_RINGKAS : LEBAR_PENUH}px` } as CSSProperties}>
         <div className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-10 lg:pt-10">
           {/* Transisi halaman memakai animasi CSS (lihat .masuk-halaman di index.css):
               selalu selesai walau pengguna berpindah halaman dengan cepat. */}

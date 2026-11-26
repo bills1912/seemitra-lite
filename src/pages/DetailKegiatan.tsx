@@ -9,8 +9,9 @@ import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Kandidat, Kegiatan, Petugas } from '../lib/types';
 import { useAksi, usePengaturan } from '../lib/hooks';
 import { useUmpan } from '../components/umpan';
+import { Pilihan } from '../components/pemilih';
 import {
-  AngkaHidup, AreaUnggah, Avatar, Batang, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Pilihan, Segmen, Tombol, TombolIkon, cx,
+  AngkaHidup, AreaUnggah, Avatar, Batang, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Segmen, Tombol, TombolIkon, cx,
 } from '../components/ui';
 import { FormKegiatan, SalinKegiatan } from './Kegiatan';
 import { LABEL_STATUS, angka, cocok, labelBulan, rentang, rupiah, statusKegiatan } from '../lib/format';
@@ -150,9 +151,7 @@ function BarisPetugas({ p, batas, hapus }: { p: Petugas; batas: number | null; h
         </div>
       </td>
       <td className="px-2 py-2.5">
-        <select value={p.peran} onChange={(e) => simpan.mutate({ peran: e.target.value })} className="cursor-pointer rounded-lg border border-transparent bg-transparent px-2 py-1 font-semibold text-stone-700 hover:border-stone-200 focus:border-brand-400 focus:outline-none">
-          {[...new Set([...(atur?.daftar_peran ?? []), p.peran])].map((r) => <option key={r}>{r}</option>)}
-        </select>
+        <Pilihan kecil nilai={p.peran} ubah={(v) => v !== p.peran && simpan.mutate({ peran: v })} opsi={[...new Set([...(atur?.daftar_peran ?? []), p.peran])]} className="w-fit" />
       </td>
       <td className="px-2 py-2.5"><SelLangsung nilai={p.volume} simpan={(v) => simpan.mutate({ volume: v })} /></td>
       <td className="px-2 py-2.5"><SelLangsung nilai={p.tarif} uang simpan={(v) => simpan.mutate({ tarif: v })} /></td>
