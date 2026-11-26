@@ -39,7 +39,12 @@ Hampir semua hal yang biasa berubah dari tahun ke tahun bisa diatur langsung dar
 4. **Rekap Honor** — cek total honor per mitra per bulan & siapa yang melebihi batas; **Ekspor Excel** untuk keuangan.
 5. **SPK & BAST** — pilih bulan, isi tanggal, klik **Buat**. File Word langsung terunduh.
 
-> Penting: SPK, BAST, dan rekap mengikuti **bulan pembayaran honor** kegiatan, bukan tanggal pelaksanaannya.
+> Penting: **SPK, BAST, dan pengecekan SBML** memakai **bulan kegiatan** (bulan dari tanggal selesai kegiatan).
+> **Bulan pembayaran** terisi otomatis = bulan kegiatan + 1 (bisa diubah per kegiatan, atau aturan umumnya di Pengaturan → Kantor, PPK & bayar).
+> Rekap Honor bisa dilihat per *bulan kegiatan* atau per *bulan pembayaran*.
+>
+> Kegiatan yang ada **setiap bulan** (mis. SHK): saat menambah kegiatan pilih **Bulanan sepanjang tahun**. Aplikasi membuat satu kegiatan per bulan;
+> di halaman kegiatan ada pilihan bulan dan tombol **Salin petugas ke bulan berikutnya**.
 
 Salah hapus? Tekan **Urungkan** pada notifikasi yang muncul, atau buka tautan *"Lihat yang terhapus"* di bawah halaman Mitra/Kegiatan.
 

@@ -86,12 +86,12 @@ export function Dokumen() {
 
   return (
     <div>
-      <KepalaHalaman judul="SPK & BAST" sub="Buat Surat Perjanjian Kerja dan Berita Acara Serah Terima otomatis dalam format Word."
+      <KepalaHalaman judul="SPK & BAST" sub="Dibuat per bulan kegiatan (menurut tanggal pelaksanaan), menggabungkan semua kegiatan mitra di bulan tersebut."
         aksi={<PemilihBulan nilai={bulan} ubah={(b) => setParam({ bulan: b }, { replace: true })} />} />
 
       {!data ? <Memuat /> : data.mitra.length === 0 ? (
         <Kartu><Kosong ikon={<FileSignature className="size-7" />} judul={`Belum ada mitra dengan honor ${labelBulan(bulan)}`}
-          pesan="SPK & BAST dibuat dari kegiatan yang bulan honornya sama dengan bulan ini. Tambahkan petugas di kegiatan terlebih dahulu."
+          pesan="SPK & BAST dibuat dari kegiatan yang dilaksanakan (tanggal selesai) pada bulan ini. Tambahkan petugas di kegiatan terlebih dahulu."
           aksi={<Link to="/kegiatan"><Tombol>Buka Kegiatan</Tombol></Link>} /></Kartu>
       ) : (
         <div className="grid gap-6 xl:grid-cols-[1fr_420px]">

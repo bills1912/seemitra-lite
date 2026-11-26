@@ -168,7 +168,7 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
   );
 }
 
-type Hasil = { mitra: { id: number; nama: string; sobat_id: string | null; kecamatan: string | null }[]; kegiatan: { id: number; nama: string; bulan_honor: string }[] };
+type Hasil = { mitra: { id: number; nama: string; sobat_id: string | null; kecamatan: string | null }[]; kegiatan: { id: number; nama: string; bulan_honor: string; bulan_kegiatan: string }[] };
 type Item = { kunci: string; label: string; sub?: string; ikon: ReactNode; ke: string };
 
 function PencarianCepat({ buka, tutup }: { buka: boolean; tutup: () => void }) {
@@ -185,7 +185,7 @@ function PencarianCepat({ buka, tutup }: { buka: boolean; tutup: () => void }) {
       ...MENU.map((m) => ({ kunci: m.ke, label: `Buka ${m.label}`, ikon: <m.ikon className="size-4" />, ke: m.ke })),
     ].filter((a) => !q || a.label.toLowerCase().includes(q.toLowerCase()));
     const m: Item[] = (data?.mitra ?? []).map((x) => ({ kunci: 'm' + x.id, label: x.nama, sub: [x.sobat_id, x.kecamatan].filter(Boolean).join(' · ') || 'Mitra', ikon: <Users className="size-4" />, ke: `/mitra?lihat=${x.id}` }));
-    const k: Item[] = (data?.kegiatan ?? []).map((x) => ({ kunci: 'k' + x.id, label: x.nama, sub: `Honor ${labelBulan(x.bulan_honor)}`, ikon: <CalendarDays className="size-4" />, ke: `/kegiatan/${x.id}` }));
+    const k: Item[] = (data?.kegiatan ?? []).map((x) => ({ kunci: 'k' + x.id, label: x.nama, sub: `Bulan kegiatan ${labelBulan(x.bulan_kegiatan)} · dibayar ${labelBulan(x.bulan_honor)}`, ikon: <CalendarDays className="size-4" />, ke: `/kegiatan/${x.id}` }));
     return q ? [...m, ...k, ...aksi] : aksi;
   }, [data, q]);
   useEffect(() => setPilih(0), [item.length]);

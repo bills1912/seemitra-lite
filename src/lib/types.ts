@@ -10,7 +10,7 @@ export type Mitra = {
 
 export type Kegiatan = {
   id: number; nama: string; singkatan: string | null; jenis: string; tanggal_mulai: string; tanggal_selesai: string;
-  bulan_honor: string; satuan: string; mak: string | null; target_petugas: number | null;
+  bulan_honor: string; bulan_kegiatan: string; seri_id: number | null; satuan: string; mak: string | null; target_petugas: number | null;
   tarif: Record<string, number>; keterangan: string | null; dihapus: string | null;
   jumlah_petugas: number; total_honor: number; total_volume: number;
 };
@@ -28,11 +28,11 @@ export type Kandidat = {
 
 export type Pengaturan = {
   nama_kantor: string; wilayah: string; alamat_kantor: string; ppk_nama: string; ppk_nip: string; ppk_jabatan: string;
-  format_nomor_spk: string; format_nomor_bast: string; daftar_peran: string[]; daftar_satuan: string[]; daftar_jenis: string[]; ambang_sbml: number;
+  format_nomor_spk: string; format_nomor_bast: string; daftar_peran: string[]; daftar_satuan: string[]; daftar_jenis: string[]; ambang_sbml: number; jeda_pembayaran: number;
 };
 
 export type BarisRekap = {
   mitra_id: number; nama: string; sobat_id: string | null; kecamatan: string | null; desa: string | null;
   bank: string | null; no_rekening: string | null; total: number;
-  tugas: { kegiatan_id: number; kegiatan: string; peran: string; volume: number; satuan: string; tarif: number; honor: number }[];
+  tugas: { kegiatan_id: number; kegiatan: string; peran: string; volume: number; satuan: string; tarif: number; honor: number; bulan_kegiatan: string; bulan_honor: string }[];
 };

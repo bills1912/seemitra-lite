@@ -22,16 +22,21 @@ const geserBulan = (bulan: string, n: number) => {
 type BarisRekap = {
   mitra_id: number; nama: string; sobat_id: string | null; kecamatan: string | null; desa: string | null;
   bank: string | null; no_rekening: string | null; total: number;
-  tugas: { kegiatan_id: number; kegiatan: string; peran: string; volume: number; satuan: string; tarif: number; honor: number }[];
+  tugas: { kegiatan_id: number; kegiatan: string; peran: string; volume: number; satuan: string; tarif: number; honor: number; bulan_kegiatan: string; bulan_honor: string }[];
 };
 
-export function rekapBulan(bulan: string): BarisRekap[] {
+/**
+ * Rekap honor per mitra untuk satu bulan.
+ * dasar = 'kegiatan' (bawaan; bulan pelaksanaan → SBML, SPK, BAST) atau 'bayar' (bulan pembayaran honor).
+ */
+export function rekapBulan(bulan: string, dasar: 'kegiatan' | 'bayar' = 'kegiatan'): BarisRekap[] {
+  const kolom = dasar === 'bayar' ? 'k.bulan_honor' : 'k.bulan_kegiatan';
   const rows = db
     .prepare(
       `SELECT m.id AS mitra_id, m.nama, m.sobat_id, m.kecamatan, m.desa, m.bank, m.no_rekening,
-              k.id AS kegiatan_id, k.nama AS kegiatan, k.satuan, p.peran, p.volume, p.tarif, (p.volume*p.tarif) AS honor
+              k.id AS kegiatan_id, k.nama AS kegiatan, k.satuan, k.bulan_kegiatan, k.bulan_honor, p.peran, p.volume, p.tarif, (p.volume*p.tarif) AS honor
        FROM penugasan p JOIN kegiatan k ON k.id = p.kegiatan_id JOIN mitra m ON m.id = p.mitra_id
-       WHERE k.dihapus IS NULL AND m.dihapus IS NULL AND k.bulan_honor = ?
+       WHERE k.dihapus IS NULL AND m.dihapus IS NULL AND ${kolom} = ?
        ORDER BY m.nama COLLATE NOCASE, k.tanggal_mulai`,
     )
     .all(bulan) as Record<string, never>[];
@@ -42,29 +47,33 @@ export function rekapBulan(bulan: string): BarisRekap[] {
       b = { mitra_id: r.mitra_id, nama: r.nama, sobat_id: r.sobat_id, kecamatan: r.kecamatan, desa: r.desa, bank: r.bank, no_rekening: r.no_rekening, total: 0, tugas: [] };
       peta.set(r.mitra_id, b);
     }
-    b.tugas.push({ kegiatan_id: r.kegiatan_id, kegiatan: r.kegiatan, peran: r.peran, volume: r.volume, satuan: r.satuan, tarif: r.tarif, honor: r.honor });
+    b.tugas.push({ kegiatan_id: r.kegiatan_id, kegiatan: r.kegiatan, peran: r.peran, volume: r.volume, satuan: r.satuan, tarif: r.tarif, honor: r.honor, bulan_kegiatan: r.bulan_kegiatan, bulan_honor: r.bulan_honor });
     b.total += r.honor;
   }
   return [...peta.values()];
 }
 
+const dasarDari = (v?: string) => (v === 'bayar' ? 'bayar' : 'kegiatan') as 'kegiatan' | 'bayar';
+
 laporan.get('/rekap', (c) => {
   const bulan = c.req.query('bulan') ?? hariIni().slice(0, 7);
+  const dasar = dasarDari(c.req.query('dasar'));
   const kegiatan = db
     .prepare(
-      `SELECT k.id, k.nama, k.satuan, COUNT(DISTINCT p.mitra_id) AS petugas, COALESCE(SUM(p.volume*p.tarif),0) AS total
+      `SELECT k.id, k.nama, k.satuan, k.bulan_kegiatan, k.bulan_honor, COUNT(DISTINCT p.mitra_id) AS petugas, COALESCE(SUM(p.volume*p.tarif),0) AS total
        FROM kegiatan k LEFT JOIN penugasan p ON p.kegiatan_id = k.id
-       WHERE k.dihapus IS NULL AND k.bulan_honor = ? GROUP BY k.id ORDER BY k.tanggal_mulai`,
+       WHERE k.dihapus IS NULL AND ${dasar === 'bayar' ? 'k.bulan_honor' : 'k.bulan_kegiatan'} = ? GROUP BY k.id ORDER BY k.tanggal_mulai`,
     )
     .all(bulan);
-  return c.json({ bulan, baris: rekapBulan(bulan), kegiatan, sbml: sbmlBulan(bulan), ambang: ambilPengaturan().ambang_sbml });
+  return c.json({ bulan, dasar, baris: rekapBulan(bulan, dasar), kegiatan, sbml: sbmlBulan(bulan), ambang: ambilPengaturan().ambang_sbml });
 });
 
 laporan.get('/rekap/ekspor', async (c) => {
   const bulan = c.req.query('bulan') ?? hariIni().slice(0, 7);
+  const dasar = dasarDari(c.req.query('dasar'));
   const batas = sbmlBulan(bulan);
   const adaBatas = Object.keys(batas).length > 0;
-  const baris = rekapBulan(bulan).map((b, i) => {
+  const baris = rekapBulan(bulan, dasar).map((b, i) => {
     const per: Record<string, number> = {};
     for (const t of b.tugas) per[t.peran] = (per[t.peran] ?? 0) + t.honor;
     const lewat = Object.entries(per).filter(([p, v]) => batas[p] && v > batas[p]).map(([p]) => p);
@@ -72,7 +81,8 @@ laporan.get('/rekap/ekspor', async (c) => {
       no: i + 1, ...b,
       rincian: b.tugas.map((t) => `${t.kegiatan} (${t.peran}): ${t.volume} ${t.satuan} × Rp${t.tarif.toLocaleString('id-ID')}`).join('; '),
       per_peran: Object.entries(per).map(([p, v]) => `${p}: Rp${Math.round(v).toLocaleString('id-ID')}`).join('; '),
-      status: !adaBatas ? '-' : lewat.length ? `Melebihi SBML ${lewat.join(', ')}` : 'Aman',
+      // SBML hanya bermakna bila rekap disusun per bulan kegiatan
+      status: dasar === 'bayar' ? '-' : !adaBatas ? '-' : lewat.length ? `Melebihi SBML ${lewat.join(', ')}` : 'Aman',
     };
   });
   const buf = await buatExcel(
@@ -84,9 +94,9 @@ laporan.get('/rekap/ekspor', async (c) => {
       { judul: 'No Rekening', kunci: 'no_rekening' }, { judul: 'Status SBML', kunci: 'status', lebar: 22 },
     ],
     baris,
-    `Rekap Honor Mitra — ${labelBulan(bulan)}${adaBatas ? ` (SBML/bulan: ${Object.entries(batas).map(([p, v]) => `${p} Rp${v.toLocaleString('id-ID')}`).join(', ')})` : ''}`,
+    `Rekap Honor Mitra — ${dasar === 'bayar' ? 'dibayar' : 'kegiatan'} ${labelBulan(bulan)}${adaBatas && dasar !== 'bayar' ? ` (SBML/bulan: ${Object.entries(batas).map(([p, v]) => `${p} Rp${v.toLocaleString('id-ID')}`).join(', ')})` : ''}`,
   );
-  return unduh(c, buf, `Rekap Honor ${labelBulan(bulan)}.xlsx`);
+  return unduh(c, buf, `Rekap Honor ${dasar === 'bayar' ? 'Pembayaran' : 'Kegiatan'} ${labelBulan(bulan)}.xlsx`);
 });
 
 laporan.get('/beranda', (c) => {
@@ -98,18 +108,23 @@ laporan.get('/beranda', (c) => {
   const statistik = {
     mitra_aktif: satu("SELECT COUNT(*) n FROM mitra WHERE dihapus IS NULL AND status = 'aktif'"),
     kegiatan_berjalan: satu('SELECT COUNT(*) n FROM kegiatan WHERE dihapus IS NULL AND tanggal_mulai <= ? AND tanggal_selesai >= ?', hari, hari),
-    kegiatan_tahun_ini: satu("SELECT COUNT(*) n FROM kegiatan WHERE dihapus IS NULL AND substr(bulan_honor,1,4) = ?", String(tahun)),
+    kegiatan_tahun_ini: satu("SELECT COUNT(*) n FROM kegiatan WHERE dihapus IS NULL AND substr(bulan_kegiatan,1,4) = ?", String(tahun)),
     honor_bulan_ini: satu(
-      'SELECT COALESCE(SUM(p.volume*p.tarif),0) n FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id WHERE k.dihapus IS NULL AND k.bulan_honor = ?', bulan),
+      'SELECT COALESCE(SUM(p.volume*p.tarif),0) n FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id WHERE k.dihapus IS NULL AND k.bulan_kegiatan = ?', bulan),
     mitra_bertugas_bulan_ini: satu(
+      'SELECT COUNT(DISTINCT p.mitra_id) n FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id WHERE k.dihapus IS NULL AND k.bulan_kegiatan = ?', bulan),
+    // pembayaran bulan berjalan (real-time): honor yang bulan pembayarannya = bulan ini
+    bayar_bulan_ini: satu(
+      'SELECT COALESCE(SUM(p.volume*p.tarif),0) n FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id WHERE k.dihapus IS NULL AND k.bulan_honor = ?', bulan),
+    mitra_dibayar_bulan_ini: satu(
       'SELECT COUNT(DISTINCT p.mitra_id) n FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id WHERE k.dihapus IS NULL AND k.bulan_honor = ?', bulan),
   };
 
   const honorBulanan = db
     .prepare(
-      `SELECT k.bulan_honor AS bulan, COALESCE(SUM(p.volume*p.tarif),0) AS total, COUNT(DISTINCT p.mitra_id) AS mitra
+      `SELECT k.bulan_kegiatan AS bulan, COALESCE(SUM(p.volume*p.tarif),0) AS total, COUNT(DISTINCT p.mitra_id) AS mitra
        FROM kegiatan k LEFT JOIN penugasan p ON p.kegiatan_id = k.id
-       WHERE k.dihapus IS NULL AND substr(k.bulan_honor,1,4) = ? GROUP BY k.bulan_honor`,
+       WHERE k.dihapus IS NULL AND substr(k.bulan_kegiatan,1,4) = ? GROUP BY k.bulan_kegiatan`,
     )
     .all(String(tahun)) as { bulan: string; total: number; mitra: number }[];
   const grafik = Array.from({ length: 12 }, (_, i) => {
@@ -120,7 +135,7 @@ laporan.get('/beranda', (c) => {
 
   const kegiatanAktif = db
     .prepare(
-      `SELECT k.id, k.nama, k.tanggal_mulai, k.tanggal_selesai, k.bulan_honor, k.target_petugas,
+      `SELECT k.id, k.nama, k.tanggal_mulai, k.tanggal_selesai, k.bulan_honor, k.bulan_kegiatan, k.seri_id, k.target_petugas,
          (SELECT COUNT(DISTINCT mitra_id) FROM penugasan WHERE kegiatan_id = k.id) AS jumlah_petugas
        FROM kegiatan k WHERE k.dihapus IS NULL AND k.tanggal_selesai >= ? AND k.tanggal_mulai <= date(?, '+30 day')
        ORDER BY k.tanggal_mulai LIMIT 8`,
@@ -148,7 +163,7 @@ laporan.get('/beranda', (c) => {
   const tanpaVolume = db
     .prepare(
       `SELECT k.id, k.nama, COUNT(*) n FROM penugasan p JOIN kegiatan k ON k.id = p.kegiatan_id
-       WHERE k.dihapus IS NULL AND k.bulan_honor IN (?, ?) AND (p.volume = 0 OR p.tarif = 0) GROUP BY k.id`,
+       WHERE k.dihapus IS NULL AND k.bulan_kegiatan IN (?, ?) AND (p.volume = 0 OR p.tarif = 0) GROUP BY k.id`,
     )
     .all(bulan, geserBulan(bulan, 1)) as { id: number; nama: string; n: number }[];
   for (const k of tanpaVolume) perhatian.push({ jenis: 'peringatan', judul: `${k.n} petugas ${k.nama} belum ada volume/tarif`, detail: 'Honornya masih Rp0.', tautan: `/kegiatan/${k.id}` });

@@ -14,7 +14,7 @@ import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Lencana, Masu
 import { rupiah, tanggal } from '../lib/format';
 
 const TAB = [
-  { id: 'kantor', label: 'Kantor & PPK', ikon: Building2, admin: true },
+  { id: 'kantor', label: 'Kantor, PPK & bayar', ikon: Building2, admin: true },
   { id: 'nomor', label: 'Format nomor', ikon: Hash, admin: true },
   { id: 'batas', label: 'Batas honor (SBML)', ikon: Scale, admin: false },
   { id: 'daftar', label: 'Peran & satuan', ikon: ListChecks, admin: true },
@@ -47,7 +47,7 @@ export function HalamanPengaturan() {
         </nav>
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.18 }}>
-            {tab === 'kantor' && <TabKantor />}
+            {tab === 'kantor' && <div className="space-y-5"><TabKantor /><PanelPembayaran /></div>}
             {tab === 'nomor' && <TabNomor />}
             {tab === 'batas' && <TabBatas admin={admin} />}
             {tab === 'daftar' && <TabDaftar />}
@@ -95,6 +95,22 @@ function TabKantor() {
         <Kolom label="Nama PPK (beserta gelar)" petunjuk="${ppk_nama}"><Masukan {...isi('ppk_nama')} /></Kolom>
         <Kolom label="NIP PPK" petunjuk="${ppk_nip}"><Masukan {...isi('ppk_nip')} /></Kolom>
         <Kolom label="Jabatan" petunjuk="${ppk_jabatan}"><Masukan {...isi('ppk_jabatan')} /></Kolom>
+      </div>
+    </Panel>
+  );
+}
+
+function PanelPembayaran() {
+  const { data, f, setF, simpan } = useFormPengaturan();
+  if (!data) return null;
+  return (
+    <Panel judul="Bulan pembayaran honor" ket="Bulan pembayaran setiap kegiatan diisi otomatis dari bulan kegiatan (tanggal selesai) ditambah jeda ini. Tetap bisa diubah per kegiatan."
+      kaki={<Tombol memuat={simpan.isPending} onClick={() => simpan.mutate({ jeda_pembayaran: f.jeda_pembayaran })}>Simpan</Tombol>}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm text-stone-600">Honor dibayar</span>
+        <Pilihan nilai={String(f.jeda_pembayaran ?? 1)} ubah={(v) => setF({ ...f, jeda_pembayaran: Number(v) })} className="w-64"
+          opsi={[{ nilai: '0', label: 'pada bulan yang sama' }, { nilai: '1', label: '1 bulan setelah kegiatan (n+1)' }, { nilai: '2', label: '2 bulan setelah kegiatan' }, { nilai: '3', label: '3 bulan setelah kegiatan' }]} />
+        <span className="text-xs text-stone-400">Berlaku untuk kegiatan yang dibuat setelahnya.</span>
       </div>
     </Panel>
   );

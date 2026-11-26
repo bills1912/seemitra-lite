@@ -9,9 +9,9 @@ import { BULAN_PENDEK, LABEL_STATUS, labelBulan, rentang, rupiah, rupiahRingkas,
 
 type DataBeranda = {
   hari: string; bulan: string;
-  statistik: { mitra_aktif: number; kegiatan_berjalan: number; kegiatan_tahun_ini: number; honor_bulan_ini: number; mitra_bertugas_bulan_ini: number };
+  statistik: { mitra_aktif: number; kegiatan_berjalan: number; kegiatan_tahun_ini: number; honor_bulan_ini: number; mitra_bertugas_bulan_ini: number; bayar_bulan_ini: number; mitra_dibayar_bulan_ini: number };
   grafik: { bulan: string; total: number; mitra: number }[];
-  kegiatanAktif: { id: number; nama: string; tanggal_mulai: string; tanggal_selesai: string; bulan_honor: string; target_petugas: number | null; jumlah_petugas: number }[];
+  kegiatanAktif: { id: number; nama: string; tanggal_mulai: string; tanggal_selesai: string; bulan_honor: string; bulan_kegiatan: string; seri_id: number | null; target_petugas: number | null; jumlah_petugas: number }[];
   perhatian: { jenis: 'bahaya' | 'peringatan' | 'info'; judul: string; detail: string; tautan: string }[];
   pengguna: Pengguna;
 };
@@ -33,8 +33,8 @@ export function Beranda() {
   const kartu = [
     { label: 'Mitra aktif', nilai: s.mitra_aktif, ikon: Users, warna: 'from-teal-500 to-emerald-500', ke: '/mitra' },
     { label: 'Kegiatan berjalan', nilai: s.kegiatan_berjalan, ikon: CalendarDays, warna: 'from-sky-500 to-indigo-500', ke: '/kegiatan', sub: `${s.kegiatan_tahun_ini} kegiatan tahun ini` },
-    { label: `Honor ${labelBulan(data.bulan)}`, nilai: s.honor_bulan_ini, ikon: Wallet, warna: 'from-amber-500 to-orange-500', ke: '/rekap', uang: true },
-    { label: 'Mitra bertugas bulan ini', nilai: s.mitra_bertugas_bulan_ini, ikon: UserPlus, warna: 'from-rose-500 to-pink-500', ke: '/rekap' },
+    { label: `Honor kegiatan ${labelBulan(data.bulan)}`, nilai: s.honor_bulan_ini, ikon: Wallet, warna: 'from-amber-500 to-orange-500', ke: '/rekap', uang: true, sub: `${s.mitra_bertugas_bulan_ini} mitra bertugas` },
+    { label: `Dibayar ${labelBulan(data.bulan)}`, nilai: s.bayar_bulan_ini, ikon: UserPlus, warna: 'from-rose-500 to-pink-500', ke: `/rekap?bulan=${data.bulan}&dasar=bayar`, uang: true, sub: `${s.mitra_dibayar_bulan_ini} mitra menerima pembayaran` },
   ];
   const maksGrafik = Math.max(1, ...data.grafik.map((g) => g.total));
   const namaDepan = data.pengguna.nama.split(' ')[0];
@@ -77,7 +77,7 @@ export function Beranda() {
       <div className="mt-6 grid gap-6 xl:grid-cols-5">
         <Kartu className="p-6 xl:col-span-3" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
           <div className="mb-1 flex items-center justify-between">
-            <h2 className="font-bold text-stone-900">Honor mitra per bulan · {data.bulan.slice(0, 4)}</h2>
+            <h2 className="font-bold text-stone-900">Honor mitra per bulan kegiatan · {data.bulan.slice(0, 4)}</h2>
             <span className="text-xs text-stone-400">klik batang untuk melihat rekap</span>
           </div>
           <p className="mb-5 text-sm text-stone-500">Total {rupiah(data.grafik.reduce((a, g) => a + g.total, 0))}</p>
@@ -146,7 +146,7 @@ export function Beranda() {
                   <Link to={`/kegiatan/${k.id}`} className="-mx-2 flex flex-col gap-2 rounded-xl px-2 py-3 transition hover:bg-stone-50 sm:flex-row sm:items-center sm:gap-6">
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold text-stone-800">{k.nama}</div>
-                      <div className="text-xs text-stone-400">{rentang(k.tanggal_mulai, k.tanggal_selesai)} · honor {labelBulan(k.bulan_honor)}</div>
+                      <div className="text-xs text-stone-400">{rentang(k.tanggal_mulai, k.tanggal_selesai)}{k.seri_id ? ' · bulanan' : ''} · dibayar {labelBulan(k.bulan_honor)}</div>
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="w-36">

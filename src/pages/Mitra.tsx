@@ -210,7 +210,7 @@ function ImporMitra({ buka, tutup }: { buka: boolean; tutup: () => void }) {
 /* ---------------------------- Detail mitra (laci samping) ---------------------------- */
 type DataDetail = {
   mitra: Mitra;
-  tugas: { id: number; kegiatan_id: number; kegiatan: string; bulan_honor: string; satuan: string; peran: string; volume: number; tarif: number; honor: number; tanggal_mulai: string; tanggal_selesai: string }[];
+  tugas: { id: number; kegiatan_id: number; kegiatan: string; bulan_honor: string; bulan_kegiatan: string; satuan: string; peran: string; volume: number; tarif: number; honor: number; tanggal_mulai: string; tanggal_selesai: string }[];
   sbml: Record<string, Record<string, number>>;
   ambang: number;
 };
@@ -218,7 +218,7 @@ function DetailMitra({ id, tutup, ubah }: { id: number | null; tutup: () => void
   const { data } = useQuery({ queryKey: ['mitra-detail', id], queryFn: () => api.get<DataDetail>(`/mitra/${id}`), enabled: !!id });
   const perBulan = useMemo(() => {
     const g = new Map<string, DataDetail['tugas']>();
-    for (const t of data?.tugas ?? []) g.set(t.bulan_honor, [...(g.get(t.bulan_honor) ?? []), t]);
+    for (const t of data?.tugas ?? []) g.set(t.bulan_kegiatan, [...(g.get(t.bulan_kegiatan) ?? []), t]);
     return [...g.entries()];
   }, [data]);
   const m = data?.mitra;
@@ -272,7 +272,7 @@ function DetailMitra({ id, tutup, ubah }: { id: number | null; tutup: () => void
                   return (
                     <motion.div key={b} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="rounded-2xl border border-stone-100 p-4">
                       <div className="mb-2 flex items-center justify-between">
-                        <Link to={`/rekap?bulan=${b}`} className="font-semibold text-stone-800 hover:text-brand-700">{labelBulan(b)}</Link>
+                        <Link to={`/rekap?bulan=${b}`} className="font-semibold text-stone-800 hover:text-brand-700">Kegiatan {labelBulan(b)}</Link>
                         <span className={cx('angka text-sm font-bold', terburuk.status === 'lewat' ? 'text-rose-600' : 'text-stone-700')}>{rupiah(sub)}</span>
                       </div>
                       <div className="mb-3 space-y-1.5">
@@ -298,7 +298,7 @@ function DetailMitra({ id, tutup, ubah }: { id: number | null; tutup: () => void
                             <Link to={`/kegiatan/${t.kegiatan_id}`} className="min-w-0 truncate text-stone-600 hover:text-brand-700">
                               <span className="font-medium text-stone-800">{t.kegiatan}</span> · {t.peran}
                             </Link>
-                            <span className="angka shrink-0 text-xs text-stone-500">{t.volume} {t.satuan} · {rupiah(t.honor)}</span>
+                            <span className="angka shrink-0 text-xs text-stone-500">{t.volume} {t.satuan} · {rupiah(t.honor)} · dibayar {labelBulan(t.bulan_honor)}</span>
                           </li>
                         ))}
                       </ul>

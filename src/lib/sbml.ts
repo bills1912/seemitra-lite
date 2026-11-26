@@ -1,7 +1,7 @@
 /**
  * Aturan SBML (batas honor mitra per bulan):
  * - Batas berbeda untuk setiap PERAN (PPL, PML, Pengolahan, …) dan diatur per tahun di menu Pengaturan.
- * - Dicek PER BULAN KEGIATAN (bulan honor): honor seorang mitra untuk satu peran di satu bulan
+ * - Dicek PER BULAN KEGIATAN (bulan dari tanggal selesai kegiatan): honor seorang mitra untuk satu peran di satu bulan
  *   dijumlahkan dari semua kegiatan, lalu dibandingkan dengan SBML peran tersebut.
  * - "Mendekati" = sudah mencapai ambang peringatan (bawaan 80%) dari SBML; "melebihi" = di atas SBML.
  */

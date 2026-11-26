@@ -6,30 +6,34 @@ import { AlertTriangle, ChevronDown, Download, FileSignature, Wallet } from 'luc
 import { api, unduhFile } from '../lib/api';
 import type { BarisRekap } from '../lib/types';
 import { useUmpan } from '../components/umpan';
-import { AngkaHidup, Avatar, Batang, KepalaHalaman, Kartu, Kosong, Kotak, KotakCari, Kerangka, Paginasi, PemilihBulan, Tombol, cx } from '../components/ui';
+import { AngkaHidup, Avatar, Batang, KepalaHalaman, Kartu, Kosong, Kotak, KotakCari, Kerangka, Paginasi, PemilihBulan, Segmen, Tombol, cx } from '../components/ui';
 import { angka, bulanIni, cocok, labelBulan, rupiah } from '../lib/format';
 import { jumlahPerPeran, persen, statusSbml, statusTerburuk, type PetaSbml } from '../lib/sbml';
 
-type DataRekap = { bulan: string; baris: BarisRekap[]; kegiatan: { id: number; nama: string; satuan: string; petugas: number; total: number }[]; sbml: PetaSbml; ambang: number };
+type DataRekap = { bulan: string; dasar: 'kegiatan' | 'bayar'; baris: BarisRekap[]; kegiatan: { id: number; nama: string; satuan: string; petugas: number; total: number }[]; sbml: PetaSbml; ambang: number };
 
 export function Rekap() {
   const [param, setParam] = useSearchParams();
   const bulan = param.get('bulan') ?? bulanIni();
-  const setBulan = (b: string) => setParam({ bulan: b }, { replace: true });
+  // dasar: 'kegiatan' = bulan pelaksanaan (SBML, SPK, BAST) · 'bayar' = bulan pembayaran honor
+  const dasar = param.get('dasar') === 'bayar' ? 'bayar' : 'kegiatan';
+  const setBulan = (b: string) => setParam({ bulan: b, ...(dasar === 'bayar' ? { dasar } : {}) }, { replace: true });
+  const setDasar = (d: string) => setParam({ bulan, ...(d === 'bayar' ? { dasar: d } : {}) }, { replace: true });
   const [q, setQ] = useState('');
   const [hanyaLebih, setHanyaLebih] = useState(param.get('lewat') === '1');
   const [buka, setBuka] = useState<number | null>(null);
   const { beritahu } = useUmpan();
-  const { data, isFetching } = useQuery({ queryKey: ['rekap', bulan], queryFn: () => api.get<DataRekap>(`/rekap?bulan=${bulan}`), placeholderData: (p) => p });
+  const { data, isFetching } = useQuery({ queryKey: ['rekap', bulan, dasar], queryFn: () => api.get<DataRekap>(`/rekap?bulan=${bulan}&dasar=${dasar}`), placeholderData: (p) => p });
 
   const sbml = data?.sbml ?? {};
   const ambang = data?.ambang ?? 80;
-  const adaSbml = Object.keys(sbml).length > 0;
+  // SBML hanya dicek pada rekap per bulan kegiatan
+  const adaSbml = dasar === 'kegiatan' && Object.keys(sbml).length > 0;
   // status SBML setiap mitra: dicek per peran untuk bulan ini
   const semua = useMemo(() => (data?.baris ?? []).map((b) => {
     const per = jumlahPerPeran(b.tugas);
-    return { ...b, per, terburuk: statusTerburuk(per, data?.sbml ?? {}, data?.ambang ?? 80) };
-  }), [data]);
+    return { ...b, per, terburuk: statusTerburuk(per, dasar === 'kegiatan' ? data?.sbml ?? {} : {}, data?.ambang ?? 80) };
+  }), [data, dasar]);
   const baris = semua.filter((b) => (!hanyaLebih || b.terburuk.status === 'lewat') && (!q || cocok(`${b.nama} ${b.sobat_id ?? ''} ${b.kecamatan ?? ''}`, q)));
   const total = semua.reduce((s, b) => s + b.total, 0);
   const lebih = semua.filter((b) => b.terburuk.status === 'lewat').length;
@@ -37,11 +41,12 @@ export function Rekap() {
 
   return (
     <div>
-      <KepalaHalaman judul="Rekap Honor Bulanan" sub="Total honor setiap mitra berdasarkan bulan pembayaran kegiatan."
+      <KepalaHalaman judul="Rekap Honor Bulanan" sub={dasar === 'kegiatan' ? 'Honor setiap mitra menurut bulan pelaksanaan kegiatan — dasar pengecekan SBML, SPK & BAST.' : 'Honor setiap mitra yang dibayarkan pada bulan ini (bulan pembayaran).'}
         aksi={<>
+          <Segmen id="dasar-rekap" nilai={dasar} ubah={setDasar} opsi={[{ nilai: 'kegiatan', label: 'Bulan kegiatan' }, { nilai: 'bayar', label: 'Bulan pembayaran' }]} />
           <PemilihBulan nilai={bulan} ubah={setBulan} />
-          <Tombol varian="kedua" ikon={<Download className="size-4" />} onClick={() => unduhFile(`/rekap/ekspor?bulan=${bulan}`).catch((e) => beritahu('galat', e.message))}>Ekspor Excel</Tombol>
-          <Link to={`/dokumen?bulan=${bulan}`}><Tombol ikon={<FileSignature className="size-4" />}>SPK & BAST</Tombol></Link>
+          <Tombol varian="kedua" ikon={<Download className="size-4" />} onClick={() => unduhFile(`/rekap/ekspor?bulan=${bulan}&dasar=${dasar}`).catch((e) => beritahu('galat', e.message))}>Ekspor Excel</Tombol>
+          {dasar === 'kegiatan' && <Link to={`/dokumen?bulan=${bulan}`}><Tombol ikon={<FileSignature className="size-4" />}>SPK & BAST</Tombol></Link>}
         </>} />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -49,7 +54,7 @@ export function Rekap() {
           ['Total honor', <AngkaHidup key="a" nilai={total} format={rupiah} />],
           ['Mitra menerima honor', <AngkaHidup key="b" nilai={data?.baris.length ?? 0} />],
           ['Kegiatan', <AngkaHidup key="c" nilai={data?.kegiatan.length ?? 0} />],
-          ['Melebihi SBML', adaSbml ? <span key="d" className={lebih ? 'text-rose-600' : 'text-emerald-600'}><AngkaHidup nilai={lebih} /> <span className="text-sm font-semibold text-stone-400">mitra{dekat ? ` · ${dekat} mendekati` : ''}</span></span> : <Link key="d" to="/pengaturan?tab=batas" className="text-base text-brand-700 underline">Atur SBML</Link>],
+          [dasar === 'bayar' ? 'Status SBML' : 'Melebihi SBML', dasar === 'bayar' ? <button key="d" onClick={() => setDasar('kegiatan')} className="text-base text-brand-700 underline">lihat per bulan kegiatan</button> : adaSbml ? <span key="d" className={lebih ? 'text-rose-600' : 'text-emerald-600'}><AngkaHidup nilai={lebih} /> <span className="text-sm font-semibold text-stone-400">mitra{dekat ? ` · ${dekat} mendekati` : ''}</span></span> : <Link key="d" to="/pengaturan?tab=batas" className="text-base text-brand-700 underline">Atur SBML</Link>],
         ].map(([l, v], i) => (
           <Kartu key={i} className="p-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <div className="text-[13px] font-semibold text-stone-500">{l}</div>
@@ -80,7 +85,7 @@ export function Rekap() {
         </div>
         {!data ? <div className="space-y-2 p-4">{[1, 2, 3].map((i) => <Kerangka key={i} className="h-14" />)}</div> : baris.length === 0 ? (
           <Kosong ikon={<Wallet className="size-7" />} judul={data.baris.length ? 'Tidak ada yang cocok' : `Belum ada honor untuk ${labelBulan(bulan)}`}
-            pesan={data.baris.length ? undefined : 'Honor muncul di sini setelah mitra ditugaskan pada kegiatan dengan bulan honor ini.'} />
+            pesan={data.baris.length ? undefined : dasar === 'kegiatan' ? 'Honor muncul di sini setelah mitra ditugaskan pada kegiatan yang dilaksanakan di bulan ini.' : 'Belum ada honor yang dijadwalkan dibayar pada bulan ini.'} />
         ) : (
           <motion.ul key={bulan} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="divide-y divide-stone-100">
             {baris.map((b, i) => {
@@ -119,7 +124,7 @@ export function Rekap() {
                               })}
                             </div>
                           )}
-                          <RincianTugas tugas={b.tugas} />
+                          <RincianTugas tugas={b.tugas} dasar={dasar} />
                           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
                             <span>{[b.bank, b.no_rekening].filter(Boolean).join(' · ') || 'Rekening belum diisi'}</span>
                             <div className="flex gap-3">
@@ -143,7 +148,7 @@ export function Rekap() {
 
 /** Rincian kegiatan seorang mitra di rekap: 5 baris per halaman + pencarian */
 const PER_HALAMAN_RINCIAN = 5;
-function RincianTugas({ tugas }: { tugas: BarisRekap['tugas'] }) {
+function RincianTugas({ tugas, dasar }: { tugas: BarisRekap['tugas']; dasar: 'kegiatan' | 'bayar' }) {
   const [q, setQ] = useState('');
   const [halaman, setHalaman] = useState(1);
   const cocokQ = tugas.filter((t) => !q || cocok(`${t.kegiatan} ${t.peran}`, q));
@@ -157,19 +162,20 @@ function RincianTugas({ tugas }: { tugas: BarisRekap['tugas'] }) {
         <span className="text-xs text-stone-400">{tugas.length} kegiatan · total {rupiah(cocokQ.reduce((s, t) => s + t.honor, 0))}{q ? ' (hasil pencarian)' : ''}</span>
       </div>
       <table className="w-full text-sm">
-        <thead><tr className="text-left text-xs text-stone-400"><th className="pb-2 font-semibold">Kegiatan</th><th className="pb-2 font-semibold">Peran</th><th className="pb-2 text-right font-semibold">Volume</th><th className="pb-2 text-right font-semibold">Tarif</th><th className="pb-2 text-right font-semibold">Honor</th></tr></thead>
+        <thead><tr className="text-left text-xs text-stone-400"><th className="pb-2 font-semibold">Kegiatan</th><th className="pb-2 font-semibold">{dasar === 'kegiatan' ? 'Dibayar' : 'Bulan kegiatan'}</th><th className="pb-2 font-semibold">Peran</th><th className="pb-2 text-right font-semibold">Volume</th><th className="pb-2 text-right font-semibold">Tarif</th><th className="pb-2 text-right font-semibold">Honor</th></tr></thead>
         <AnimatePresence mode="wait" initial={false}>
           <motion.tbody key={`${hal}-${q}`} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.15 }}>
             {tampil.map((t, j) => (
               <tr key={j} className="border-t border-stone-200/60">
                 <td className="py-2"><Link to={`/kegiatan/${t.kegiatan_id}`} className="font-medium text-stone-700 hover:text-brand-700">{t.kegiatan}</Link></td>
+                <td className="py-2 text-xs text-stone-500">{labelBulan(dasar === 'kegiatan' ? t.bulan_honor : t.bulan_kegiatan)}</td>
                 <td className="py-2 text-stone-500">{t.peran}</td>
                 <td className="angka py-2 text-right">{angka(t.volume)} {t.satuan}</td>
                 <td className="angka py-2 text-right">{rupiah(t.tarif)}</td>
                 <td className="angka py-2 text-right font-semibold">{rupiah(t.honor)}</td>
               </tr>
             ))}
-            {tampil.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-xs text-stone-400">Tidak ada kegiatan yang cocok.</td></tr>}
+            {tampil.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-xs text-stone-400">Tidak ada kegiatan yang cocok.</td></tr>}
           </motion.tbody>
         </AnimatePresence>
       </table>

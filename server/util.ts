@@ -38,6 +38,10 @@ export function akhirBulan(bulan: string): string {
   const t = new Date(Date.UTC(y, m, 0));
   return t.toISOString().slice(0, 10);
 }
+export function geserBulan(bulan: string, n: number): string {
+  const [y, m] = bulan.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
+}
 export const labelBulan = (bulan: string) => {
   const [y, m] = bulan.split('-').map(Number);
   return `${BULAN[m - 1]} ${y}`;

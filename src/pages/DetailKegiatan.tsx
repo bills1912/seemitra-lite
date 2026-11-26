@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  AlertTriangle, ArrowLeft, Check, ChevronDown, ClipboardList, Copy, Download, FileSignature, Pencil, Trash2, Upload, UserPlus, Users, Wallet, Package, CalendarRange,
+  AlertTriangle, ArrowLeft, Check, ChevronDown, ClipboardList, Copy, Repeat, Download, FileSignature, Pencil, Trash2, Upload, UserPlus, Users, Wallet, Package, CalendarRange,
 } from 'lucide-react';
 import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Kandidat, Kegiatan, Petugas } from '../lib/types';
@@ -14,11 +14,12 @@ import {
   AngkaHidup, AreaUnggah, Avatar, Batang, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Segmen, Tombol, TombolIkon, cx,
 } from '../components/ui';
 import { FormKegiatan, SalinKegiatan } from './Kegiatan';
-import { DaftarAlokasiBulan, PopupRincianMitra, useAlokasiBulan, type BarisAlokasi } from '../components/CekKegiatan';
-import { LABEL_STATUS, angka, cocok, labelBulan, rentang, rupiah, statusKegiatan } from '../lib/format';
+import { DaftarAlokasiBulan, PopupRincianMitra, periodeKegiatan, useAlokasiBulan, type BarisAlokasi } from '../components/CekKegiatan';
+import { BULAN_PENDEK, LABEL_STATUS, angka, cocok, labelBulan, rentang, rupiah, statusKegiatan } from '../lib/format';
 import { lebihBuruk, persen, statusSbml, type PetaSbml, type StatusSbml } from '../lib/sbml';
 
-type Detail = { kegiatan: Kegiatan; petugas: Petugas[]; sbml: PetaSbml; ambang: number };
+type Seri = { id: number; tanggal_mulai: string; tanggal_selesai: string; bulan_kegiatan: string; bulan_honor: string; jumlah_petugas: number };
+type Detail = { kegiatan: Kegiatan; seri: Seri[] | null; petugas: Petugas[]; sbml: PetaSbml; ambang: number };
 
 export function DetailKegiatan() {
   const id = Number(useParams().id);
@@ -72,13 +73,15 @@ export function DetailKegiatan() {
         </>}
       />
 
+      {data.seri && data.seri.length > 1 && <NavigasiSeri seri={data.seri} ini={k.id} punyaPetugas={petugas.length > 0} />}
+
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { ikon: CalendarRange, label: 'Jadwal', isi: rentang(k.tanggal_mulai, k.tanggal_selesai), sub: <Link to={`/rekap?bulan=${k.bulan_honor}`} className="hover:text-brand-700 hover:underline">Honor dibayar {labelBulan(k.bulan_honor)}</Link> },
+          { ikon: CalendarRange, label: 'Jadwal', isi: rentang(k.tanggal_mulai, k.tanggal_selesai), sub: <>Bulan kegiatan <Link to={`/rekap?bulan=${k.bulan_kegiatan}`} className="font-semibold hover:text-brand-700 hover:underline">{labelBulan(k.bulan_kegiatan)}</Link> · dibayar <Link to={`/rekap?bulan=${k.bulan_honor}&dasar=bayar`} className="font-semibold hover:text-brand-700 hover:underline">{labelBulan(k.bulan_honor)}</Link></> },
           { ikon: Users, label: 'Petugas', isi: <><AngkaHidup nilai={k.jumlah_petugas} />{k.target_petugas ? <span className="text-stone-400"> / {k.target_petugas}</span> : ''}</>, sub: k.target_petugas ? (k.jumlah_petugas >= k.target_petugas ? 'Target terpenuhi ✓' : `Kurang ${k.target_petugas - k.jumlah_petugas} orang`) : 'mitra' },
           { ikon: Package, label: 'Beban kerja', isi: <><AngkaHidup nilai={k.total_volume} /> <span className="text-base font-semibold text-stone-500">{k.satuan}</span></>, sub: Object.entries(k.tarif).map(([p, t]) => `${p} ${rupiah(t)}`).join(' · ') || 'tarif belum diatur' },
-          { ikon: Wallet, label: 'Total honor', isi: <AngkaHidup nilai={k.total_honor} format={rupiah} />, sub: !adaSbml ? <Link to="/pengaturan?tab=batas" className="hover:underline">SBML {k.bulan_honor.slice(0, 4)} belum diatur</Link>
-            : lebih ? <span className="font-semibold text-rose-600">{lebih} mitra melebihi SBML {labelBulan(k.bulan_honor)}</span>
+          { ikon: Wallet, label: 'Total honor', isi: <AngkaHidup nilai={k.total_honor} format={rupiah} />, sub: !adaSbml ? <Link to="/pengaturan?tab=batas" className="hover:underline">SBML {k.bulan_kegiatan.slice(0, 4)} belum diatur</Link>
+            : lebih ? <span className="font-semibold text-rose-600">{lebih} mitra melebihi SBML {labelBulan(k.bulan_kegiatan)}</span>
             : dekat ? <span className="font-semibold text-amber-600">{dekat} mitra mendekati SBML</span> : 'semua petugas dalam batas SBML' },
         ].map((c, i) => (
           <Kartu key={c.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="p-4">
@@ -97,7 +100,7 @@ export function DetailKegiatan() {
           <div className="flex flex-wrap gap-2 lg:ml-auto">
             <Tombol kecil varian="kedua" ikon={<Upload className="size-3.5" />} onClick={() => setImpor(true)}>Impor</Tombol>
             {petugas.length > 0 && <Tombol kecil varian="kedua" ikon={<Download className="size-3.5" />} onClick={() => unduhFile(`/kegiatan/${k.id}/ekspor`).catch((e) => beritahu('galat', e.message))}>Ekspor</Tombol>}
-            {petugas.length > 0 && <Link to={`/dokumen?bulan=${k.bulan_honor}&kegiatan=${k.id}`}><Tombol kecil varian="kedua" ikon={<FileSignature className="size-3.5" />}>SPK/BAST</Tombol></Link>}
+            {petugas.length > 0 && <Link to={`/dokumen?bulan=${k.bulan_kegiatan}&kegiatan=${k.id}`}><Tombol kecil varian="kedua" ikon={<FileSignature className="size-3.5" />}>SPK/BAST</Tombol></Link>}
             <Tombol kecil ikon={<UserPlus className="size-3.5" />} onClick={() => setPilih(true)}>Tambah petugas</Tombol>
           </div>
         </div>
@@ -110,12 +113,12 @@ export function DetailKegiatan() {
               <thead>
                 <tr className="bg-stone-50/70 text-left text-xs font-bold uppercase tracking-wide text-stone-400">
                   <th className="px-4 py-3">Mitra</th><th className="px-2 py-3">Peran</th><th className="px-2 py-3">Volume ({k.satuan})</th><th className="px-2 py-3">Tarif</th>
-                  <th className="px-2 py-3 text-right">Honor</th><th className="px-4 py-3" title="Honor mitra untuk peran ini dari semua kegiatan di bulan yang sama, dibanding SBML peran tsb">Honor peran · {labelBulan(k.bulan_honor)} vs SBML</th><th />
+                  <th className="px-2 py-3 text-right">Honor</th><th className="px-4 py-3" title="Honor mitra untuk peran ini dari semua kegiatan di bulan yang sama, dibanding SBML peran tsb">Honor peran · {labelBulan(k.bulan_kegiatan)} vs SBML</th><th />
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
                 <AnimatePresence initial={false}>
-                  {tampil.map((p) => <BarisPetugas key={p.id} p={p} sbml={sbml} ambang={ambang} bulan={k.bulan_honor} hapus={() => hapusPetugas(p)} />)}
+                  {tampil.map((p) => <BarisPetugas key={p.id} p={p} sbml={sbml} ambang={ambang} bulan={k.bulan_kegiatan} hapus={() => hapusPetugas(p)} />)}
                 </AnimatePresence>
               </tbody>
               <tfoot>
@@ -136,6 +139,46 @@ export function DetailKegiatan() {
       <PilihPetugas buka={pilih} tutup={() => setPilih(false)} kegiatan={k} />
       <ImporPetugas buka={impor} tutup={() => setImpor(false)} kegiatan={k} />
     </div>
+  );
+}
+
+/* ---------------------------- Navigasi bulan untuk kegiatan bulanan ---------------------------- */
+function NavigasiSeri({ seri, ini, punyaPetugas }: { seri: Seri[]; ini: number; punyaPetugas: boolean }) {
+  const nav = useNavigate();
+  const [salin, setSalin] = useState(false);
+  const [denganVolume, setDenganVolume] = useState(true);
+  const posisi = seri.findIndex((s) => s.id === ini);
+  const sisa = seri.length - posisi - 1;
+  const kirim = useAksi(() => api.post<{ jumlah: number; bulan: number }>(`/kegiatan/${ini}/salin-petugas-seri`, { salin_volume: denganVolume }), {
+    sukses: (r) => (r.jumlah ? `${r.jumlah} penugasan disalin ke ${r.bulan} bulan berikutnya.` : 'Semua petugas sudah ada di bulan-bulan berikutnya.'), setelah: () => setSalin(false),
+  });
+  return (
+    <Kartu className="mb-5 p-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-bold text-stone-800"><Repeat className="size-4 text-sky-600" /> Kegiatan bulanan · {seri.length} bulan</div>
+        {punyaPetugas && sisa > 0 && (
+          <Tombol kecil varian="lembut" ikon={<Copy className="size-3.5" />} onClick={() => setSalin(true)}>Salin petugas ke {sisa} bulan berikutnya</Tombol>
+        )}
+      </div>
+      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-12">
+        {seri.map((s) => {
+          const aktif = s.id === ini;
+          return (
+            <button key={s.id} type="button" onClick={() => nav(`/kegiatan/${s.id}`)} title={`${labelBulan(s.bulan_kegiatan)} · ${s.jumlah_petugas} petugas · dibayar ${labelBulan(s.bulan_honor)}`}
+              className={cx('relative rounded-xl px-1 py-2 text-center transition-colors', aktif ? 'text-white' : s.jumlah_petugas ? 'bg-brand-50 text-brand-800 hover:bg-brand-100' : 'bg-stone-100 text-stone-400 hover:bg-stone-200/70')}>
+              {aktif && <motion.span layoutId="seri-aktif" transition={{ type: 'spring', stiffness: 420, damping: 32 }} className="absolute inset-0 rounded-xl bg-brand-600 shadow-sm" />}
+              <span className="relative block text-xs font-bold">{BULAN_PENDEK[Number(s.bulan_kegiatan.slice(5)) - 1]}</span>
+              <span className={cx('relative block text-[10px]', aktif ? 'text-brand-100' : '')}>{s.jumlah_petugas} ptgs</span>
+            </button>
+          );
+        })}
+      </div>
+      <Jendela buka={salin} tutup={() => setSalin(false)} judul="Salin petugas ke bulan berikutnya"
+        sub={`Petugas bulan ini disalin ke ${sisa} bulan berikutnya. Petugas yang sudah ada di bulan tujuan tidak diubah.`}
+        kaki={<><Tombol varian="kedua" onClick={() => setSalin(false)}>Batal</Tombol><Tombol memuat={kirim.isPending} ikon={<Copy className="size-4" />} onClick={() => kirim.mutate(undefined)}>Salin</Tombol></>}>
+        <Kotak aktif={denganVolume} ubah={setDenganVolume} label="Salin juga volume beban kerja (jika tidak, volume diisi 0 dan diisi per bulan)" />
+      </Jendela>
+    </Kartu>
   );
 }
 
@@ -255,7 +298,9 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
   const [rinci, setRinci] = useState<number | null>(null);
   const jangkarRinci = useRef<HTMLElement | null>(null);
   // semua penugasan mitra di BULAN KEGIATAN ini (bukan bulan hari ini)
-  const { data: alokasi } = useAlokasiBulan(k.bulan_honor, buka);
+  // semua mitra yang bertugas pada BULAN PELAKSANAAN kegiatan ini (menurut tanggal mulai–selesai)
+  const periode = periodeKegiatan(k);
+  const { data: alokasi } = useAlokasiBulan(k.bulan_kegiatan, buka, periode);
   const alokasiMitra = useMemo(() => {
     const peta = new Map<number, BarisAlokasi[]>();
     for (const r of alokasi?.rows ?? []) peta.set(r.mitra_id, [...(peta.get(r.mitra_id) ?? []), r]);
@@ -287,7 +332,7 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
       judul: lewat ? `Honor ${peran} melebihi SBML` : `Honor ${peran} mendekati SBML`,
       pesan: (
         <div className="space-y-2">
-          <p>Honor <b>{peran}</b> di <b>{labelBulan(k.bulan_honor)}</b>{honorBaru ? ' (termasuk kegiatan ini)' : ''} — SBML {rupiah(batas)}:</p>
+          <p>Honor <b>{peran}</b> di bulan kegiatan <b>{labelBulan(k.bulan_kegiatan)}</b>{honorBaru ? ' (termasuk kegiatan ini)' : ''} — SBML {rupiah(batas)}:</p>
           <ul className="space-y-1.5">
             {calon.slice(0, 6).map((m) => (
               <li key={m.id} className={cx('rounded-xl px-3 py-2', status(m) === 'lewat' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800')}>
@@ -340,7 +385,7 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
   const jumlahBerisiko = (data?.mitra ?? []).filter((m) => dipilih.has(m.id) && status(m) !== 'aman' && status(m) !== 'tanpa').length;
 
   return (
-    <Jendela buka={buka} tutup={tutup} lebar="max-w-3xl" judul="Tambah petugas" sub={`${k.nama} · honor ${labelBulan(k.bulan_honor)}`}
+    <Jendela buka={buka} tutup={tutup} lebar="max-w-3xl" judul="Tambah petugas" sub={`${k.nama} · bulan kegiatan ${labelBulan(k.bulan_kegiatan)} · dibayar ${labelBulan(k.bulan_honor)}`}
       kaki={<>
         <span className="mr-auto text-sm text-stone-500">{dipilih.size ? <><b className="text-stone-800">{dipilih.size}</b> mitra dipilih{jumlahBerisiko > 0 && <span className="ml-2 font-semibold text-amber-600">· {jumlahBerisiko} mendekati/melebihi SBML</span>}</> : 'Belum ada yang dipilih'}</span>
         <Tombol varian="kedua" onClick={tutup}>Batal</Tombol>
@@ -354,12 +399,12 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <KotakCari autoFocus nilai={q} ubah={setQ} placeholder={modeCek ? 'Cari mitra atau nama kegiatan…' : 'Cari nama, SOBAT ID, atau wilayah…'} className="flex-1" />
         <Tombol varian={modeCek ? 'utama' : 'lembut'} ikon={<ClipboardList className="size-4" />} onClick={() => setModeCek(!modeCek)}>
-          {modeCek ? 'Kembali memilih' : `Cek kegiatan mitra · ${labelBulan(k.bulan_honor)}`}
+          {modeCek ? 'Kembali memilih' : `Cek kegiatan mitra · ${periode.label}`}
         </Tombol>
       </div>
       {modeCek ? (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <DaftarAlokasiBulan bulan={k.bulan_honor} q={q} kegiatanIni={k.id} />
+          <DaftarAlokasiBulan bulan={k.bulan_kegiatan} q={q} kegiatanIni={k.id} periode={periode} />
         </motion.div>
       ) : <>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
@@ -399,7 +444,7 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
                 {(() => {
                   const n = alokasiMitra.get(m.id)?.length ?? 0;
                   return (
-                    <button type="button" onClick={(e) => { jangkarRinci.current = e.currentTarget; setRinci(rinci === m.id ? null : m.id); }} title={`Cek kegiatan mitra di ${labelBulan(k.bulan_honor)}`}
+                    <button type="button" onClick={(e) => { jangkarRinci.current = e.currentTarget; setRinci(rinci === m.id ? null : m.id); }} title={`Cek kegiatan mitra di ${periode.label}`}
                       className={cx('flex w-28 shrink-0 items-center justify-end gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition',
                         n ? 'text-sky-700 hover:bg-sky-50' : 'text-stone-300 hover:bg-stone-100 hover:text-stone-500')}>
                       <ClipboardList className="size-3.5" />{n ? `${n} kegiatan` : 'kosong'}
@@ -416,7 +461,7 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
       </>}
       {rinci !== null && (() => {
         const m = data?.mitra.find((x) => x.id === rinci);
-        return <PopupRincianMitra buka={!!m} tutup={() => setRinci(null)} jangkar={jangkarRinci} rows={alokasiMitra.get(rinci) ?? []} data={alokasi} kegiatanIni={k.id} nama={m?.nama ?? ''} bulan={k.bulan_honor} />;
+        return <PopupRincianMitra buka={!!m} tutup={() => setRinci(null)} jangkar={jangkarRinci} rows={alokasiMitra.get(rinci) ?? []} data={alokasi} kegiatanIni={k.id} nama={m?.nama ?? ''} bulan={k.bulan_kegiatan} labelPeriode={periode.label} />;
       })()}
     </Jendela>
   );

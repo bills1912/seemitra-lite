@@ -5,7 +5,7 @@ import { Hono, type Context } from 'hono';
 import crypto from 'node:crypto';
 import { db, catat, transaksi, ambilPengaturan } from '../db.ts';
 import type { Env } from '../auth.ts';
-import { GagalError, isiNomor, labelBulan } from '../util.ts';
+import { akhirBulan, GagalError, geserBulan, isiNomor, labelBulan } from '../util.ts';
 import { bacaExcel, buatExcel } from '../excel.ts';
 
 export const data = new Hono<Env>();
@@ -29,7 +29,7 @@ export function honorPeranBulan(bulan: string): Map<number, Record<string, numbe
     .prepare(
       `SELECT p.mitra_id, p.peran, SUM(p.volume * p.tarif) AS total
        FROM penugasan p JOIN kegiatan k ON k.id = p.kegiatan_id
-       WHERE k.dihapus IS NULL AND k.bulan_honor = ? GROUP BY p.mitra_id, p.peran`,
+       WHERE k.dihapus IS NULL AND k.bulan_kegiatan = ? GROUP BY p.mitra_id, p.peran`,
     )
     .all(bulan) as { mitra_id: number; peran: string; total: number }[];
   const peta = new Map<number, Record<string, number>>();
@@ -71,10 +71,10 @@ data.get('/mitra', (c) => {
       `SELECT m.*,
         (SELECT COUNT(DISTINCT p.kegiatan_id) FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id
            WHERE p.mitra_id = m.id AND k.dihapus IS NULL) AS jumlah_kegiatan,
-        (SELECT MAX(k.bulan_honor) FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id
+        (SELECT MAX(k.bulan_kegiatan) FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id
            WHERE p.mitra_id = m.id AND k.dihapus IS NULL) AS terakhir_bertugas,
         (SELECT COALESCE(SUM(p.volume*p.tarif),0) FROM penugasan p JOIN kegiatan k ON k.id=p.kegiatan_id
-           WHERE p.mitra_id = m.id AND k.dihapus IS NULL AND k.bulan_honor = ?) AS honor_bulan_ini
+           WHERE p.mitra_id = m.id AND k.dihapus IS NULL AND k.bulan_kegiatan = ?) AS honor_bulan_ini
        FROM mitra m WHERE ${terhapus ? 'm.dihapus IS NOT NULL' : 'm.dihapus IS NULL'}
        ORDER BY m.nama COLLATE NOCASE`,
     )
@@ -94,12 +94,12 @@ data.get('/mitra/:id', (c) => {
   if (!mitra) throw new GagalError('Mitra tidak ditemukan.', 404);
   const tugas = db
     .prepare(
-      `SELECT p.*, k.nama AS kegiatan, k.bulan_honor, k.satuan, k.tanggal_mulai, k.tanggal_selesai, (p.volume*p.tarif) AS honor
+      `SELECT p.*, k.nama AS kegiatan, k.bulan_honor, k.bulan_kegiatan, k.satuan, k.tanggal_mulai, k.tanggal_selesai, (p.volume*p.tarif) AS honor
        FROM penugasan p JOIN kegiatan k ON k.id = p.kegiatan_id
-       WHERE p.mitra_id = ? AND k.dihapus IS NULL ORDER BY k.bulan_honor DESC, k.tanggal_mulai DESC`,
+       WHERE p.mitra_id = ? AND k.dihapus IS NULL ORDER BY k.bulan_kegiatan DESC, k.tanggal_mulai DESC`,
     )
     .all(id);
-  const tahun = [...new Set((tugas as { bulan_honor: string }[]).map((t) => Number(t.bulan_honor.slice(0, 4))))];
+  const tahun = [...new Set((tugas as { bulan_kegiatan: string }[]).map((t) => Number(t.bulan_kegiatan.slice(0, 4))))];
   return c.json({ mitra, tugas, sbml: Object.fromEntries(tahun.map((t) => [t, sbmlTahun(t)])), ambang: ambilPengaturan().ambang_sbml });
 });
 
@@ -210,16 +210,22 @@ data.get('/mitra-ekspor', async (c) => {
 });
 
 /* =============================== KEGIATAN =============================== */
-const KOLOM_KEGIATAN = ['nama', 'singkatan', 'jenis', 'tanggal_mulai', 'tanggal_selesai', 'bulan_honor', 'satuan', 'mak', 'target_petugas', 'tarif', 'keterangan'] as const;
+const KOLOM_KEGIATAN = ['nama', 'singkatan', 'jenis', 'tanggal_mulai', 'tanggal_selesai', 'bulan_kegiatan', 'bulan_honor', 'satuan', 'mak', 'target_petugas', 'tarif', 'keterangan'] as const;
 
+/**
+ * Aturan bulan:
+ * - bulan_kegiatan = bulan dari TANGGAL SELESAI → dasar pengecekan SBML, SPK & BAST.
+ * - bulan_honor    = BULAN PEMBAYARAN. Jika tidak diisi: bulan kegiatan + jeda (Pengaturan, bawaan n+1).
+ */
 function nilaiKegiatan(b: Record<string, unknown>) {
   const nama = teks(b.nama);
   if (!nama) throw new GagalError('Nama kegiatan wajib diisi.');
   const mulai = teks(b.tanggal_mulai), selesai = teks(b.tanggal_selesai);
   if (!mulai || !selesai) throw new GagalError('Tanggal mulai dan selesai wajib diisi.');
   if (selesai < mulai) throw new GagalError('Tanggal selesai tidak boleh sebelum tanggal mulai.');
-  const bulan = teks(b.bulan_honor) ?? selesai.slice(0, 7);
-  if (!/^\d{4}-\d{2}$/.test(bulan)) throw new GagalError('Bulan honor tidak valid.');
+  const bulanKegiatan = selesai.slice(0, 7);
+  const bulan = teks(b.bulan_honor) ?? geserBulan(bulanKegiatan, ambilPengaturan().jeda_pembayaran);
+  if (!/^\d{4}-\d{2}$/.test(bulan)) throw new GagalError('Bulan pembayaran tidak valid.');
   const tarif: Record<string, number> = {};
   for (const [k, v] of Object.entries((b.tarif as Record<string, unknown>) ?? {})) {
     const n = Number(v);
@@ -227,10 +233,30 @@ function nilaiKegiatan(b: Record<string, unknown>) {
   }
   return {
     nama, singkatan: teks(b.singkatan), jenis: teks(b.jenis) ?? 'Survei', tanggal_mulai: mulai, tanggal_selesai: selesai,
-    bulan_honor: bulan, satuan: teks(b.satuan) ?? 'Dokumen', mak: teks(b.mak),
+    bulan_kegiatan: bulanKegiatan, bulan_honor: bulan, satuan: teks(b.satuan) ?? 'Dokumen', mak: teks(b.mak),
     target_petugas: kosong(b.target_petugas) === null ? null : Number(b.target_petugas),
     tarif: JSON.stringify(tarif), keterangan: teks(b.keterangan),
   };
+}
+
+/** Membuat daftar kegiatan bulanan (satu baris per bulan) untuk kegiatan yang berulang sepanjang tahun. */
+function jadwalBulanan(b: Record<string, unknown>) {
+  const tahun = Number(b.tahun);
+  const dari = Number(b.bulan_dari ?? 1), sampai = Number(b.bulan_sampai ?? 12);
+  const hariMulai = Math.min(28, Math.max(1, Number(b.hari_mulai ?? 1)));
+  const hariSelesai = Math.max(1, Number(b.hari_selesai ?? 31));
+  const jeda = b.jeda_bayar === undefined || b.jeda_bayar === null || b.jeda_bayar === '' ? ambilPengaturan().jeda_pembayaran : Number(b.jeda_bayar);
+  if (!(tahun >= 2000 && tahun <= 2100)) throw new GagalError('Tahun kegiatan bulanan tidak valid.');
+  if (!(dari >= 1 && sampai <= 12 && dari <= sampai)) throw new GagalError('Rentang bulan tidak valid.');
+  const hasil: { tanggal_mulai: string; tanggal_selesai: string; bulan_honor: string }[] = [];
+  for (let m = dari; m <= sampai; m++) {
+    const akhir = new Date(Date.UTC(tahun, m, 0)).getUTCDate();
+    const bln = `${tahun}-${String(m).padStart(2, '0')}`;
+    const mulai = `${bln}-${String(Math.min(hariMulai, akhir)).padStart(2, '0')}`;
+    const selesai = `${bln}-${String(Math.min(Math.max(hariSelesai, hariMulai), akhir)).padStart(2, '0')}`;
+    hasil.push({ tanggal_mulai: mulai, tanggal_selesai: selesai, bulan_honor: geserBulan(bln, jeda) });
+  }
+  return hasil;
 }
 
 const SQL_KEGIATAN = `
@@ -259,11 +285,19 @@ data.get('/kegiatan/:id', (c) => {
        FROM penugasan p JOIN mitra m ON m.id = p.mitra_id WHERE p.kegiatan_id = ? ORDER BY p.peran, m.nama COLLATE NOCASE`,
     )
     .all(id) as Record<string, unknown>[];
-  const per = honorPeranBulan(String(k.bulan_honor));
+  const per = honorPeranBulan(String(k.bulan_kegiatan));
+  const seri = k.seri_id
+    ? db.prepare(
+        `SELECT k.id, k.tanggal_mulai, k.tanggal_selesai, k.bulan_kegiatan, k.bulan_honor,
+           (SELECT COUNT(DISTINCT mitra_id) FROM penugasan WHERE kegiatan_id = k.id) AS jumlah_petugas
+         FROM kegiatan k WHERE k.seri_id = ? AND k.dihapus IS NULL ORDER BY k.tanggal_mulai`,
+      ).all(Number(k.seri_id))
+    : null;
   return c.json({
     kegiatan: parsKegiatan(k),
+    seri,
     petugas: petugas.map((p) => ({ ...p, honor_peran: per.get(Number(p.mitra_id)) ?? {} })),
-    sbml: sbmlBulan(String(k.bulan_honor)),
+    sbml: sbmlBulan(String(k.bulan_kegiatan)),
     ambang: ambilPengaturan().ambang_sbml,
   });
 });
@@ -273,7 +307,7 @@ data.get('/kegiatan/:id/kandidat', (c) => {
   const id = Number(c.req.param('id'));
   const k = db.prepare('SELECT * FROM kegiatan WHERE id = ?').get(id) as Record<string, string> | undefined;
   if (!k) throw new GagalError('Kegiatan tidak ditemukan.', 404);
-  const per = honorPeranBulan(k.bulan_honor);
+  const per = honorPeranBulan(k.bulan_kegiatan);
   const rows = db
     .prepare(
       `SELECT m.id, m.nama, m.sobat_id, m.kecamatan, m.desa, m.pekerjaan,
@@ -286,16 +320,34 @@ data.get('/kegiatan/:id/kandidat', (c) => {
     .all(id, id, k.tanggal_selesai, k.tanggal_mulai) as Record<string, unknown>[];
   return c.json({
     mitra: rows.map((r) => ({ ...r, honor_peran: per.get(Number(r.id)) ?? {} })),
-    sbml: sbmlBulan(k.bulan_honor),
+    sbml: sbmlBulan(k.bulan_kegiatan),
     ambang: ambilPengaturan().ambang_sbml,
   });
 });
 
 data.post('/kegiatan', async (c) => {
-  const v = nilaiKegiatan(await c.req.json());
-  const r = db
-    .prepare(`INSERT INTO kegiatan (${KOLOM_KEGIATAN.join(',')}) VALUES (${KOLOM_KEGIATAN.map(() => '?').join(',')})`)
-    .run(...KOLOM_KEGIATAN.map((k) => v[k]));
+  const b = await c.req.json();
+  const sisip = db.prepare(`INSERT INTO kegiatan (${KOLOM_KEGIATAN.join(',')}) VALUES (${KOLOM_KEGIATAN.map(() => '?').join(',')})`);
+  if (b.pola === 'bulanan') {
+    // Kegiatan berulang setiap bulan: dibuat satu kegiatan per bulan dalam satu "seri"
+    const jadwal = jadwalBulanan(b);
+    const ids = transaksi(() => {
+      const hasil: number[] = [];
+      for (const j of jadwal) {
+        const v = nilaiKegiatan({ ...b, ...j });
+        hasil.push(Number(sisip.run(...KOLOM_KEGIATAN.map((k) => v[k])).lastInsertRowid));
+      }
+      db.prepare(`UPDATE kegiatan SET seri_id = ? WHERE id IN (${hasil.map(() => '?').join(',')})`).run(hasil[0], ...hasil);
+      return hasil;
+    });
+    catat(c.get('pengguna').nama, 'Tambah kegiatan bulanan', `${b.nama} (${ids.length} bulan, ${b.tahun})`);
+    // arahkan ke bulan yang sedang berjalan bila ada, jika tidak ke bulan pertama
+    const bulanIni = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+    const idx = jadwal.findIndex((j) => j.tanggal_selesai.startsWith(bulanIni));
+    return c.json({ id: ids[idx >= 0 ? idx : 0], jumlah: ids.length });
+  }
+  const v = nilaiKegiatan(b);
+  const r = sisip.run(...KOLOM_KEGIATAN.map((k) => v[k]));
   catat(c.get('pengguna').nama, 'Tambah kegiatan', v.nama);
   return c.json({ id: Number(r.lastInsertRowid) });
 });
@@ -317,19 +369,52 @@ data.put('/kegiatan/:id', async (c) => {
       }
     }
   });
-  catat(c.get('pengguna').nama, 'Ubah kegiatan', v.nama);
-  return c.json({ ok: true });
+  // Terapkan perubahan umum (bukan tanggal) ke bulan-bulan berikutnya dalam seri
+  let ikutDiubah = 0;
+  if (body.terapkan_seri) {
+    const ini = db.prepare('SELECT seri_id, tanggal_mulai FROM kegiatan WHERE id = ?').get(id) as { seri_id: number | null; tanggal_mulai: string };
+    if (ini?.seri_id) {
+      const r = db.prepare(
+        `UPDATE kegiatan SET nama = ?, singkatan = ?, jenis = ?, satuan = ?, mak = ?, target_petugas = ?, tarif = ?, keterangan = ?, diubah = datetime('now','localtime')
+         WHERE seri_id = ? AND id <> ? AND tanggal_mulai > ? AND dihapus IS NULL`,
+      ).run(v.nama, v.singkatan, v.jenis, v.satuan, v.mak, v.target_petugas, v.tarif, v.keterangan, ini.seri_id, id, ini.tanggal_mulai);
+      ikutDiubah = Number(r.changes);
+      // tarif petugas di bulan-bulan berikutnya ikut diperbarui (hanya yang masih memakai tarif lama)
+      if (body.terapkan_tarif && lama) {
+        const tl = JSON.parse(lama.tarif || '{}') as Record<string, number>;
+        for (const [peran, nilai] of Object.entries(JSON.parse(v.tarif) as Record<string, number>)) {
+          db.prepare(
+            `UPDATE penugasan SET tarif = ? WHERE peran = ? AND (tarif = ? OR tarif = 0)
+             AND kegiatan_id IN (SELECT id FROM kegiatan WHERE seri_id = ? AND tanggal_mulai > ? AND dihapus IS NULL)`,
+          ).run(nilai, peran, tl[peran] ?? 0, ini.seri_id, ini.tanggal_mulai);
+        }
+      }
+    }
+  }
+  catat(c.get('pengguna').nama, 'Ubah kegiatan', v.nama + (ikutDiubah ? ` (+${ikutDiubah} bulan berikutnya)` : ''));
+  return c.json({ ok: true, ikutDiubah });
 });
 
 data.delete('/kegiatan/:id', (c) => {
   const id = Number(c.req.param('id'));
+  const seri = c.req.query('seri') === '1' ? (db.prepare('SELECT seri_id FROM kegiatan WHERE id = ?').get(id) as { seri_id: number | null })?.seri_id : null;
+  if (seri) {
+    const r = db.prepare("UPDATE kegiatan SET dihapus = datetime('now','localtime') WHERE seri_id = ? AND dihapus IS NULL").run(seri);
+    catat(c.get('pengguna').nama, 'Hapus seri kegiatan bulanan', `${r.changes} bulan`);
+    return c.json({ ok: true, seri });
+  }
   db.prepare("UPDATE kegiatan SET dihapus = datetime('now','localtime') WHERE id = ?").run(id);
   const k = db.prepare('SELECT nama FROM kegiatan WHERE id = ?').get(id) as { nama: string } | undefined;
   catat(c.get('pengguna').nama, 'Hapus kegiatan', k?.nama);
   return c.json({ ok: true });
 });
 data.post('/kegiatan/:id/pulihkan', (c) => {
-  db.prepare('UPDATE kegiatan SET dihapus = NULL WHERE id = ?').run(Number(c.req.param('id')));
+  const id = Number(c.req.param('id'));
+  if (c.req.query('seri') === '1') {
+    const k = db.prepare('SELECT seri_id, dihapus FROM kegiatan WHERE id = ?').get(id) as { seri_id: number | null; dihapus: string };
+    if (k?.seri_id) db.prepare('UPDATE kegiatan SET dihapus = NULL WHERE seri_id = ? AND dihapus = ?').run(k.seri_id, k.dihapus);
+  }
+  db.prepare('UPDATE kegiatan SET dihapus = NULL WHERE id = ?').run(id);
   catat(c.get('pengguna').nama, 'Pulihkan kegiatan', c.req.param('id'));
   return c.json({ ok: true });
 });
@@ -340,7 +425,7 @@ data.post('/kegiatan/:id/salin', async (c) => {
   const b = await c.req.json();
   const asal = db.prepare('SELECT * FROM kegiatan WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   if (!asal) throw new GagalError('Kegiatan asal tidak ditemukan.', 404);
-  const v = nilaiKegiatan({ ...asal, tarif: JSON.parse(String(asal.tarif)), ...b });
+  const v = nilaiKegiatan({ ...asal, bulan_honor: undefined, tarif: JSON.parse(String(asal.tarif)), ...b });
   const baruId = transaksi(() => {
     const r = db
       .prepare(`INSERT INTO kegiatan (${KOLOM_KEGIATAN.join(',')}) VALUES (${KOLOM_KEGIATAN.map(() => '?').join(',')})`)
@@ -357,6 +442,29 @@ data.post('/kegiatan/:id/salin', async (c) => {
   });
   catat(c.get('pengguna').nama, 'Salin kegiatan', `${asal.nama} → ${v.nama}`);
   return c.json({ id: baruId });
+});
+
+/** Salin petugas kegiatan ini ke bulan-bulan berikutnya dalam seri yang sama (yang sudah ada tidak ditimpa). */
+data.post('/kegiatan/:id/salin-petugas-seri', async (c) => {
+  const id = Number(c.req.param('id'));
+  const { salin_volume } = await c.req.json();
+  const k = db.prepare('SELECT seri_id, tanggal_mulai, nama FROM kegiatan WHERE id = ?').get(id) as { seri_id: number | null; tanggal_mulai: string; nama: string } | undefined;
+  if (!k?.seri_id) throw new GagalError('Kegiatan ini bukan kegiatan bulanan.');
+  const tujuan = db.prepare('SELECT id FROM kegiatan WHERE seri_id = ? AND tanggal_mulai > ? AND dihapus IS NULL').all(k.seri_id, k.tanggal_mulai) as { id: number }[];
+  if (!tujuan.length) throw new GagalError('Tidak ada bulan berikutnya dalam seri ini.');
+  let jumlah = 0;
+  transaksi(() => {
+    for (const t of tujuan) {
+      const r = db.prepare(
+        `INSERT OR IGNORE INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif, dibuat_oleh)
+         SELECT ?, p.mitra_id, p.peran, ${salin_volume ? 'p.volume' : '0'}, p.tarif, ? FROM penugasan p
+         JOIN mitra m ON m.id = p.mitra_id WHERE p.kegiatan_id = ? AND m.dihapus IS NULL`,
+      ).run(t.id, c.get('pengguna').nama, id);
+      jumlah += Number(r.changes);
+    }
+  });
+  catat(c.get('pengguna').nama, 'Salin petugas ke bulan berikutnya', `${k.nama}: ${jumlah} penugasan ke ${tujuan.length} bulan`);
+  return c.json({ jumlah, bulan: tujuan.length });
 });
 
 /* =============================== PENUGASAN =============================== */
@@ -461,7 +569,7 @@ data.get('/kegiatan/:id/ekspor', async (c) => {
       { judul: 'Honor', kunci: 'honor', uang: true },
     ],
     rows,
-    `${k.nama} — honor ${labelBulan(k.bulan_honor)}`,
+    `${k.nama} — bulan kegiatan ${labelBulan(k.bulan_kegiatan)}, dibayar ${labelBulan(k.bulan_honor)}`,
   );
   return unduh(c, buf, `Petugas ${k.nama}.xlsx`);
 });
@@ -473,21 +581,24 @@ data.get('/kegiatan/:id/ekspor', async (c) => {
 data.get('/alokasi-bulan', (c) => {
   const bulan = c.req.query('bulan') ?? '';
   if (!/^\d{4}-\d{2}$/.test(bulan)) throw new GagalError('Bulan tidak valid.');
+  // Rentang tanggal pelaksanaan yang dicek (bawaan: satu bulan penuh). Kegiatan yang tanggalnya beririsan ikut ditampilkan.
+  const dari = /^\d{4}-\d{2}-\d{2}$/.test(c.req.query('dari') ?? '') ? c.req.query('dari')! : `${bulan}-01`;
+  const sampai = /^\d{4}-\d{2}-\d{2}$/.test(c.req.query('sampai') ?? '') ? c.req.query('sampai')! : akhirBulan(bulan);
   const rows = db
     .prepare(
       `SELECT p.id, p.mitra_id, m.nama, m.sobat_id, k.id AS kegiatan_id, k.nama AS kegiatan, k.tanggal_mulai, k.tanggal_selesai,
-              k.satuan, p.peran, p.volume, p.tarif, (p.volume * p.tarif) AS honor, p.dibuat_oleh, p.dibuat
+              k.bulan_kegiatan, k.bulan_honor, k.satuan, p.peran, p.volume, p.tarif, (p.volume * p.tarif) AS honor, p.dibuat_oleh, p.dibuat
        FROM penugasan p JOIN kegiatan k ON k.id = p.kegiatan_id JOIN mitra m ON m.id = p.mitra_id
-       WHERE k.dihapus IS NULL AND m.dihapus IS NULL AND k.bulan_honor = ?
+       WHERE k.dihapus IS NULL AND m.dihapus IS NULL AND k.tanggal_mulai <= ? AND k.tanggal_selesai >= ?
        ORDER BY m.nama COLLATE NOCASE, k.tanggal_mulai`,
     )
-    .all(bulan);
+    .all(sampai, dari);
   const nomor = Object.fromEntries(
     (db.prepare('SELECT mitra_id, urut FROM nomor_dokumen WHERE bulan = ?').all(bulan) as { mitra_id: number; urut: number }[]).map((r) => [r.mitra_id, r.urut]),
   );
   const p = ambilPengaturan();
   return c.json({
-    bulan, rows, sbml: sbmlBulan(bulan), ambang: p.ambang_sbml,
+    bulan, dari, sampai, rows, sbml: sbmlBulan(bulan), ambang: p.ambang_sbml,
     nomor: Object.fromEntries(Object.entries(nomor).map(([id, u]) => [id, isiNomor(p.format_nomor_spk, u, bulan)])),
   });
 });
@@ -496,7 +607,7 @@ data.get('/alokasi-bulan', (c) => {
 data.get('/cari', (c) => {
   const q = `%${(c.req.query('q') ?? '').trim()}%`;
   const mitra = db.prepare("SELECT id, nama, sobat_id, kecamatan FROM mitra WHERE dihapus IS NULL AND (nama LIKE ? OR sobat_id LIKE ? OR nik LIKE ?) ORDER BY nama LIMIT 6").all(q, q, q);
-  const kegiatan = db.prepare("SELECT id, nama, bulan_honor FROM kegiatan WHERE dihapus IS NULL AND (nama LIKE ? OR singkatan LIKE ?) ORDER BY tanggal_mulai DESC LIMIT 6").all(q, q);
+  const kegiatan = db.prepare("SELECT id, nama, bulan_honor, bulan_kegiatan FROM kegiatan WHERE dihapus IS NULL AND (nama LIKE ? OR singkatan LIKE ?) ORDER BY tanggal_mulai DESC LIMIT 6").all(q, q);
   return c.json({ mitra, kegiatan });
 });
 

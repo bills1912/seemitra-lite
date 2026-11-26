@@ -100,6 +100,18 @@ const MIGRASI: string[] = [
   /* 4 — catat siapa yang mengentri penugasan (berguna bila beberapa pegawai mengisi kegiatan berbeda) */ `
   ALTER TABLE penugasan ADD COLUMN dibuat_oleh TEXT;
   `,
+  /* 5 — bulan kegiatan & kegiatan bulanan (seri)
+     - bulan_kegiatan: bulan pelaksanaan (dari tanggal selesai) → dasar SBML, SPK & BAST
+     - bulan_honor kini berarti BULAN PEMBAYARAN; yang dulu otomatis disamakan dgn bulan selesai digeser ke bulan berikutnya (n+1)
+     - seri_id: mengelompokkan kegiatan bulanan sepanjang tahun */ `
+  ALTER TABLE kegiatan ADD COLUMN bulan_kegiatan TEXT;
+  ALTER TABLE kegiatan ADD COLUMN seri_id INTEGER;
+  UPDATE kegiatan SET bulan_kegiatan = substr(tanggal_selesai, 1, 7);
+  UPDATE kegiatan SET bulan_honor = strftime('%Y-%m', date(tanggal_selesai, 'start of month', '+1 month'))
+    WHERE bulan_honor = substr(tanggal_selesai, 1, 7);
+  CREATE INDEX idx_kegiatan_bulan_kegiatan ON kegiatan(bulan_kegiatan);
+  CREATE INDEX idx_kegiatan_seri ON kegiatan(seri_id);
+  `,
 ];
 
 function jalankanMigrasi() {
@@ -138,6 +150,8 @@ export type Pengaturan = {
   daftar_jenis: string[];
   /** Persen dari SBML untuk mulai memberi peringatan "hampir mencapai SBML" */
   ambang_sbml: number;
+  /** Bulan pembayaran otomatis = bulan kegiatan + jeda ini (bawaan 1 → dibayar bulan berikutnya) */
+  jeda_pembayaran: number;
 };
 
 export const PENGATURAN_AWAL: Pengaturan = {
@@ -154,6 +168,7 @@ export const PENGATURAN_AWAL: Pengaturan = {
   daftar_satuan: ['Dokumen', 'Ruta', 'BS', 'SLS', 'Usaha', 'Desa', 'OB', 'Kegiatan'],
   daftar_jenis: ['Survei', 'Sensus', 'Lainnya'],
   ambang_sbml: 80,
+  jeda_pembayaran: 1,
 };
 
 export function ambilPengaturan(): Pengaturan {

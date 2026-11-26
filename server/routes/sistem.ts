@@ -16,6 +16,11 @@ sistem.put('/pengaturan', wajibAdmin, async (c) => {
   const b = await c.req.json();
   const izin = Object.keys(PENGATURAN_AWAL);
   const bersih = Object.fromEntries(Object.entries(b).filter(([k]) => izin.includes(k)));
+  if ('jeda_pembayaran' in bersih) {
+    const j = Number(bersih.jeda_pembayaran);
+    if (!(j >= 0 && j <= 6)) throw new GagalError('Jeda bulan pembayaran harus 0 sampai 6 bulan.');
+    bersih.jeda_pembayaran = Math.round(j);
+  }
   if ('ambang_sbml' in bersih) {
     const a = Number(bersih.ambang_sbml);
     if (!(a >= 10 && a <= 100)) throw new GagalError('Ambang peringatan SBML harus antara 10 dan 100 persen.');

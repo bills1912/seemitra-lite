@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { ClipboardList, FileSignature } from 'lucide-react';
 import { api } from '../lib/api';
-import { angka, cocok, labelBulan, rentang, rupiah } from '../lib/format';
+import { akhirBulan, angka, cocok, labelBulan, rentang, rupiah } from '../lib/format';
 import { jumlahPerPeran, persen, statusSbml, type PetaSbml } from '../lib/sbml';
 import { AnimatePresence } from 'motion/react';
 import { Avatar, KotakCari, Lencana, Memuat, Paginasi, TombolIkon, cx } from './ui';
@@ -18,13 +18,27 @@ import { X } from 'lucide-react';
 
 export type BarisAlokasi = {
   id: number; mitra_id: number; nama: string; sobat_id: string | null; kegiatan_id: number; kegiatan: string;
-  tanggal_mulai: string; tanggal_selesai: string; satuan: string; peran: string; volume: number; tarif: number; honor: number;
+  tanggal_mulai: string; tanggal_selesai: string; bulan_kegiatan: string; bulan_honor: string; satuan: string; peran: string; volume: number; tarif: number; honor: number;
   dibuat_oleh: string | null; dibuat: string;
 };
 export type DataAlokasi = { bulan: string; rows: BarisAlokasi[]; sbml: PetaSbml; ambang: number; nomor: Record<string, string> };
 
-export const useAlokasiBulan = (bulan: string, aktif = true) =>
-  useQuery({ queryKey: ['alokasi', bulan], queryFn: () => api.get<DataAlokasi>(`/alokasi-bulan?bulan=${bulan}`), enabled: aktif && !!bulan });
+export type Rentang = { dari: string; sampai: string };
+/** Periode pengecekan sebuah kegiatan: awal bulan tanggal mulai s.d. akhir bulan tanggal selesai */
+export function periodeKegiatan(k: { tanggal_mulai: string; tanggal_selesai: string }): Rentang & { label: string } {
+  const dari = `${k.tanggal_mulai.slice(0, 7)}-01`;
+  const sampai = akhirBulan(k.tanggal_selesai.slice(0, 7));
+  const a = k.tanggal_mulai.slice(0, 7), b = k.tanggal_selesai.slice(0, 7);
+  return { dari, sampai, label: a === b ? labelBulan(b) : `${labelBulan(a)} – ${labelBulan(b)}` };
+}
+
+/** bulan = bulan kegiatan (untuk SBML & nomor SPK); rentang = tanggal pelaksanaan yang dicek */
+export const useAlokasiBulan = (bulan: string, aktif = true, rentang?: Rentang) =>
+  useQuery({
+    queryKey: ['alokasi', bulan, rentang?.dari, rentang?.sampai],
+    queryFn: () => api.get<DataAlokasi>(`/alokasi-bulan?bulan=${bulan}${rentang ? `&dari=${rentang.dari}&sampai=${rentang.sampai}` : ''}`),
+    enabled: aktif && !!bulan,
+  });
 
 /** Rincian kegiatan satu mitra (dipakai di dalam baris pemilih petugas) */
 export function RincianMitra({ rows, data, kegiatanIni, semua }: {
@@ -43,7 +57,7 @@ export function RincianMitra({ rows, data, kegiatanIni, semua }: {
               <td className="py-1.5 pr-2">
                 <Link to={`/kegiatan/${r.kegiatan_id}`} className="font-semibold text-stone-700 hover:text-brand-700">{r.kegiatan}</Link>
                 {r.kegiatan_id === kegiatanIni && <Lencana warna="brand" className="ml-1.5">kegiatan ini</Lencana>}
-                <div className="text-xs text-stone-400">{rentang(r.tanggal_mulai, r.tanggal_selesai)}{r.dibuat_oleh ? ` · dientri ${r.dibuat_oleh}` : ''}</div>
+                <div className="text-xs text-stone-400">{rentang(r.tanggal_mulai, r.tanggal_selesai)} · dibayar {labelBulan(r.bulan_honor)}{r.dibuat_oleh ? ` · dientri ${r.dibuat_oleh}` : ''}</div>
               </td>
               <td className="py-1.5 pr-2 text-xs font-semibold text-stone-500">{r.peran}</td>
               <td className="angka py-1.5 pr-2 text-right text-xs text-stone-500">{angka(r.volume)} {r.satuan}</td>
@@ -68,8 +82,9 @@ export function RincianMitra({ rows, data, kegiatanIni, semua }: {
 }
 
 /** Daftar lengkap semua mitra yang sudah dialokasikan pada bulan tsb */
-export function DaftarAlokasiBulan({ bulan, q, kegiatanIni }: { bulan: string; q: string; kegiatanIni?: number }) {
-  const { data } = useAlokasiBulan(bulan);
+export function DaftarAlokasiBulan({ bulan, q, kegiatanIni, periode }: { bulan: string; q: string; kegiatanIni?: number; periode?: Rentang & { label: string } }) {
+  const { data } = useAlokasiBulan(bulan, true, periode);
+  const label = periode?.label ?? labelBulan(bulan);
   const grup = useMemo(() => {
     const peta = new Map<number, BarisAlokasi[]>();
     for (const r of data?.rows ?? []) peta.set(r.mitra_id, [...(peta.get(r.mitra_id) ?? []), r]);
@@ -80,13 +95,13 @@ export function DaftarAlokasiBulan({ bulan, q, kegiatanIni }: { bulan: string; q
     return (
       <div className="flex flex-col items-center py-10 text-center text-sm text-stone-400">
         <ClipboardList className="mb-2 size-8 text-stone-300" />
-        {data.rows.length ? 'Tidak ada mitra yang cocok dengan pencarian.' : `Belum ada mitra yang dialokasikan pada ${labelBulan(bulan)}.`}
+        {data.rows.length ? 'Tidak ada mitra yang cocok dengan pencarian.' : `Belum ada mitra yang bertugas pada ${label}.`}
       </div>
     );
   const total = grup.reduce((s, rows) => s + rows.reduce((a, r) => a + r.honor, 0), 0);
   return (
     <div>
-      <p className="mb-2 text-xs text-stone-500">{grup.length} mitra sudah dialokasikan pada <b>{labelBulan(bulan)}</b> · total {rupiah(total)}</p>
+      <p className="mb-2 text-xs text-stone-500">{grup.length} mitra sudah bertugas pada <b>{label}</b> (menurut tanggal pelaksanaan kegiatan) · total {rupiah(total)}</p>
       <ul className="scroll-tipis max-h-[42vh] space-y-2 overflow-y-auto pr-1">
         {grup.map((rows, i) => (
           <motion.li key={rows[0].mitra_id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { delay: Math.min(i, 12) * 0.02 } }}>
@@ -108,9 +123,10 @@ export function DaftarAlokasiBulan({ bulan, q, kegiatanIni }: { bulan: string; q
 /** Popup mengambang berisi rincian kegiatan satu mitra (tidak memanjangkan daftar; cukup digulir di dalam popup).
  *  Bila lebih dari 1 kegiatan: ada pencarian dan halaman berisi 3 kegiatan. */
 const PER_HALAMAN_POPUP = 3;
-export function PopupRincianMitra({ buka, tutup, jangkar, rows, data, kegiatanIni, nama, bulan }: {
-  buka: boolean; tutup: () => void; jangkar: RefObject<HTMLElement | null>; rows: BarisAlokasi[]; data?: DataAlokasi; kegiatanIni?: number; nama: string; bulan: string;
+export function PopupRincianMitra({ buka, tutup, jangkar, rows, data, kegiatanIni, nama, bulan, labelPeriode }: {
+  buka: boolean; tutup: () => void; jangkar: RefObject<HTMLElement | null>; rows: BarisAlokasi[]; data?: DataAlokasi; kegiatanIni?: number; nama: string; bulan: string; labelPeriode?: string;
 }) {
+  const label = labelPeriode ?? labelBulan(bulan);
   const [q, setQ] = useState('');
   const [halaman, setHalaman] = useState(1);
   useEffect(() => { setQ(''); setHalaman(1); }, [nama, buka]);
@@ -125,7 +141,7 @@ export function PopupRincianMitra({ buka, tutup, jangkar, rows, data, kegiatanIn
       <div className="flex items-start justify-between gap-3 border-b border-stone-100 px-4 py-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-bold text-stone-900">{nama}</div>
-          <div className="text-xs text-stone-500">Kegiatan di {labelBulan(bulan)} · {rows.length} kegiatan · {rupiah(total)}</div>
+          <div className="text-xs text-stone-500">Kegiatan di {label} · {rows.length} kegiatan · {rupiah(total)}</div>
         </div>
         <TombolIkon label="Tutup" onClick={tutup} className="-mr-1 size-8"><X className="size-4" /></TombolIkon>
       </div>
@@ -136,7 +152,7 @@ export function PopupRincianMitra({ buka, tutup, jangkar, rows, data, kegiatanIn
       )}
       <div className="scroll-tipis max-h-80 overflow-y-auto p-3">
         {!data ? <Memuat /> : !rows.length ? (
-          <p className="rounded-xl bg-stone-50 p-4 text-center text-xs text-stone-500">Belum dialokasikan ke kegiatan apa pun pada {labelBulan(bulan)}.</p>
+          <p className="rounded-xl bg-stone-50 p-4 text-center text-xs text-stone-500">Belum bertugas di kegiatan apa pun pada {label}.</p>
         ) : !tampil.length ? (
           <p className="rounded-xl bg-stone-50 p-4 text-center text-xs text-stone-500">Tidak ada kegiatan yang cocok dengan “{q}”.</p>
         ) : (
