@@ -3,7 +3,7 @@
  * Menampilkan kegiatan apa saja yang sudah dialokasikan ke mitra pada BULAN KEGIATAN tertentu
  * (bulan honor kegiatan yang sedang diisi — bukan bulan hari ini), beserta honor dan siapa yang mengentri.
  */
-import { useMemo } from 'react';
+import { useMemo, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
@@ -11,7 +11,9 @@ import { ClipboardList, FileSignature } from 'lucide-react';
 import { api } from '../lib/api';
 import { angka, cocok, labelBulan, rentang, rupiah } from '../lib/format';
 import { jumlahPerPeran, persen, statusSbml, type PetaSbml } from '../lib/sbml';
-import { Avatar, Lencana, Memuat, cx } from './ui';
+import { Avatar, Lencana, Memuat, TombolIkon, cx } from './ui';
+import { Mengambang } from './pemilih';
+import { X } from 'lucide-react';
 
 export type BarisAlokasi = {
   id: number; mitra_id: number; nama: string; sobat_id: string | null; kegiatan_id: number; kegiatan: string;
@@ -95,5 +97,27 @@ export function DaftarAlokasiBulan({ bulan, q, kegiatanIni }: { bulan: string; q
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Popup mengambang berisi rincian kegiatan satu mitra (tidak memanjangkan daftar; cukup digulir di dalam popup) */
+export function PopupRincianMitra({ buka, tutup, jangkar, rows, data, kegiatanIni, nama, bulan }: {
+  buka: boolean; tutup: () => void; jangkar: RefObject<HTMLElement | null>; rows: BarisAlokasi[]; data?: DataAlokasi; kegiatanIni?: number; nama: string; bulan: string;
+}) {
+  const total = rows.reduce((s, r) => s + r.honor, 0);
+  return (
+    <Mengambang buka={buka} tutup={tutup} jangkar={jangkar} lebar={480} tinggi={420}>
+      <div className="flex items-start justify-between gap-3 border-b border-stone-100 px-4 py-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-bold text-stone-900">{nama}</div>
+          <div className="text-xs text-stone-500">Kegiatan di {labelBulan(bulan)} · {rows.length} kegiatan · {rupiah(total)}</div>
+        </div>
+        <TombolIkon label="Tutup" onClick={tutup} className="-mr-1 size-8"><X className="size-4" /></TombolIkon>
+      </div>
+      <div className="scroll-tipis max-h-80 overflow-y-auto p-3">
+        {!data ? <Memuat /> : rows.length ? <RincianMitra rows={rows} data={data} kegiatanIni={kegiatanIni} />
+          : <p className="rounded-xl bg-stone-50 p-4 text-center text-xs text-stone-500">Belum dialokasikan ke kegiatan apa pun pada {labelBulan(bulan)}.</p>}
+      </div>
+    </Mengambang>
   );
 }

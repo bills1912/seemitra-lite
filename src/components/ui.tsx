@@ -403,6 +403,33 @@ export function AreaUnggah({ terima, pilih, file, teks }: { terima: string; pili
   );
 }
 
+/** Tombol halaman: ‹ 1 2 3 › beserta keterangan "1–5 dari 12" */
+export function Paginasi({ halaman, total, perHalaman, ubah, className }: { halaman: number; total: number; perHalaman: number; ubah: (h: number) => void; className?: string }) {
+  const jumlah = Math.max(1, Math.ceil(total / perHalaman));
+  if (total <= perHalaman) return null;
+  const awal = (halaman - 1) * perHalaman + 1;
+  const akhir = Math.min(total, halaman * perHalaman);
+  // tampilkan maksimal 5 nomor di sekitar halaman aktif
+  const mulai = Math.max(1, Math.min(halaman - 2, jumlah - 4));
+  const nomor = Array.from({ length: Math.min(5, jumlah) }, (_, i) => mulai + i);
+  return (
+    <div className={cx('flex flex-wrap items-center justify-between gap-2', className)}>
+      <span className="text-xs text-stone-500">Menampilkan <b>{awal}–{akhir}</b> dari {total}</span>
+      <div className="flex items-center gap-1">
+        <TombolIkon label="Halaman sebelumnya" disabled={halaman <= 1} onClick={() => ubah(halaman - 1)} className="size-8 disabled:opacity-30"><ChevronLeft className="size-4" /></TombolIkon>
+        {nomor.map((n) => (
+          <button key={n} type="button" onClick={() => ubah(n)}
+            className={cx('relative grid size-8 place-items-center rounded-lg text-xs font-bold transition-colors', n === halaman ? 'text-white' : 'text-stone-600 hover:bg-stone-200/60')}>
+            {n === halaman && <motion.span layoutId={`paginasi-${perHalaman}-${total}`} transition={pegas} className="absolute inset-0 rounded-lg bg-brand-600" />}
+            <span className="relative">{n}</span>
+          </button>
+        ))}
+        <TombolIkon label="Halaman berikutnya" disabled={halaman >= jumlah} onClick={() => ubah(halaman + 1)} className="size-8 disabled:opacity-30"><ChevronRight className="size-4" /></TombolIkon>
+      </div>
+    </div>
+  );
+}
+
 /** Animasi masuk berurutan untuk daftar */
 export const urutan = {
   wadah: { tampil: { transition: { staggerChildren: 0.035 } } },

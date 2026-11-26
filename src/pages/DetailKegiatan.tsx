@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
@@ -14,7 +14,7 @@ import {
   AngkaHidup, AreaUnggah, Avatar, Batang, Jendela, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Lencana, Masukan, MasukanRupiah, Memuat, Segmen, Tombol, TombolIkon, cx,
 } from '../components/ui';
 import { FormKegiatan, SalinKegiatan } from './Kegiatan';
-import { DaftarAlokasiBulan, RincianMitra, useAlokasiBulan, type BarisAlokasi } from '../components/CekKegiatan';
+import { DaftarAlokasiBulan, PopupRincianMitra, useAlokasiBulan, type BarisAlokasi } from '../components/CekKegiatan';
 import { LABEL_STATUS, angka, cocok, labelBulan, rentang, rupiah, statusKegiatan } from '../lib/format';
 import { lebihBuruk, persen, statusSbml, type PetaSbml, type StatusSbml } from '../lib/sbml';
 
@@ -253,6 +253,7 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
   const [sembunyi, setSembunyi] = useState(true);
   const [modeCek, setModeCek] = useState(false);
   const [rinci, setRinci] = useState<number | null>(null);
+  const jangkarRinci = useRef<HTMLElement | null>(null);
   // semua penugasan mitra di BULAN KEGIATAN ini (bukan bulan hari ini)
   const { data: alokasi } = useAlokasiBulan(k.bulan_honor, buka);
   const alokasiMitra = useMemo(() => {
@@ -398,32 +399,25 @@ function PilihPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
                 {(() => {
                   const n = alokasiMitra.get(m.id)?.length ?? 0;
                   return (
-                    <button type="button" onClick={() => setRinci(rinci === m.id ? null : m.id)} title={`Cek kegiatan mitra di ${labelBulan(k.bulan_honor)}`}
+                    <button type="button" onClick={(e) => { jangkarRinci.current = e.currentTarget; setRinci(rinci === m.id ? null : m.id); }} title={`Cek kegiatan mitra di ${labelBulan(k.bulan_honor)}`}
                       className={cx('flex w-28 shrink-0 items-center justify-end gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition',
                         n ? 'text-sky-700 hover:bg-sky-50' : 'text-stone-300 hover:bg-stone-100 hover:text-stone-500')}>
                       <ClipboardList className="size-3.5" />{n ? `${n} kegiatan` : 'kosong'}
-                      <motion.span animate={{ rotate: rinci === m.id ? 180 : 0 }}><ChevronDown className="size-3.5" /></motion.span>
+                      <ChevronDown className={cx('size-3.5 transition-transform', rinci === m.id && 'rotate-180')} />
                     </button>
                   );
                 })()}
                 </div>
-                <AnimatePresence initial={false}>
-                  {rinci === m.id && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                      <div className="px-3 pb-3 sm:pl-[4.25rem]">
-                        {alokasi && alokasiMitra.get(m.id)?.length
-                          ? <RincianMitra rows={alokasiMitra.get(m.id)!} data={alokasi} kegiatanIni={k.id} />
-                          : <p className="rounded-xl bg-stone-50 p-3 text-xs text-stone-500">Belum dialokasikan ke kegiatan apa pun pada {labelBulan(k.bulan_honor)}.</p>}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </motion.li>
             );
           })}
         </ul>
       )}
       </>}
+      {rinci !== null && (() => {
+        const m = data?.mitra.find((x) => x.id === rinci);
+        return <PopupRincianMitra buka={!!m} tutup={() => setRinci(null)} jangkar={jangkarRinci} rows={alokasiMitra.get(rinci) ?? []} data={alokasi} kegiatanIni={k.id} nama={m?.nama ?? ''} bulan={k.bulan_honor} />;
+      })()}
     </Jendela>
   );
 }

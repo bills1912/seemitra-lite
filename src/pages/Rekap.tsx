@@ -6,7 +6,7 @@ import { AlertTriangle, ChevronDown, Download, FileSignature, Wallet } from 'luc
 import { api, unduhFile } from '../lib/api';
 import type { BarisRekap } from '../lib/types';
 import { useUmpan } from '../components/umpan';
-import { AngkaHidup, Avatar, Batang, KepalaHalaman, Kartu, Kosong, Kotak, KotakCari, Kerangka, PemilihBulan, Tombol, cx } from '../components/ui';
+import { AngkaHidup, Avatar, Batang, KepalaHalaman, Kartu, Kosong, Kotak, KotakCari, Kerangka, Paginasi, PemilihBulan, Tombol, cx } from '../components/ui';
 import { angka, bulanIni, cocok, labelBulan, rupiah } from '../lib/format';
 import { jumlahPerPeran, persen, statusSbml, statusTerburuk, type PetaSbml } from '../lib/sbml';
 
@@ -119,20 +119,7 @@ export function Rekap() {
                               })}
                             </div>
                           )}
-                          <table className="w-full text-sm">
-                            <thead><tr className="text-left text-xs text-stone-400"><th className="pb-2 font-semibold">Kegiatan</th><th className="pb-2 font-semibold">Peran</th><th className="pb-2 text-right font-semibold">Volume</th><th className="pb-2 text-right font-semibold">Tarif</th><th className="pb-2 text-right font-semibold">Honor</th></tr></thead>
-                            <tbody>
-                              {b.tugas.map((t, j) => (
-                                <tr key={j} className="border-t border-stone-200/60">
-                                  <td className="py-2"><Link to={`/kegiatan/${t.kegiatan_id}`} className="font-medium text-stone-700 hover:text-brand-700">{t.kegiatan}</Link></td>
-                                  <td className="py-2 text-stone-500">{t.peran}</td>
-                                  <td className="angka py-2 text-right">{angka(t.volume)} {t.satuan}</td>
-                                  <td className="angka py-2 text-right">{rupiah(t.tarif)}</td>
-                                  <td className="angka py-2 text-right font-semibold">{rupiah(t.honor)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                          <RincianTugas tugas={b.tugas} />
                           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
                             <span>{[b.bank, b.no_rekening].filter(Boolean).join(' · ') || 'Rekening belum diisi'}</span>
                             <div className="flex gap-3">
@@ -150,6 +137,43 @@ export function Rekap() {
           </motion.ul>
         )}
       </Kartu>
+    </div>
+  );
+}
+
+/** Rincian kegiatan seorang mitra di rekap: 5 baris per halaman + pencarian */
+const PER_HALAMAN_RINCIAN = 5;
+function RincianTugas({ tugas }: { tugas: BarisRekap['tugas'] }) {
+  const [q, setQ] = useState('');
+  const [halaman, setHalaman] = useState(1);
+  const cocokQ = tugas.filter((t) => !q || cocok(`${t.kegiatan} ${t.peran}`, q));
+  const jumlahHalaman = Math.max(1, Math.ceil(cocokQ.length / PER_HALAMAN_RINCIAN));
+  const hal = Math.min(halaman, jumlahHalaman);
+  const tampil = cocokQ.slice((hal - 1) * PER_HALAMAN_RINCIAN, hal * PER_HALAMAN_RINCIAN);
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <KotakCari nilai={q} ubah={(v) => { setQ(v); setHalaman(1); }} placeholder="Cari kegiatan atau peran…" className="w-full sm:max-w-xs" />
+        <span className="text-xs text-stone-400">{tugas.length} kegiatan · total {rupiah(cocokQ.reduce((s, t) => s + t.honor, 0))}{q ? ' (hasil pencarian)' : ''}</span>
+      </div>
+      <table className="w-full text-sm">
+        <thead><tr className="text-left text-xs text-stone-400"><th className="pb-2 font-semibold">Kegiatan</th><th className="pb-2 font-semibold">Peran</th><th className="pb-2 text-right font-semibold">Volume</th><th className="pb-2 text-right font-semibold">Tarif</th><th className="pb-2 text-right font-semibold">Honor</th></tr></thead>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.tbody key={`${hal}-${q}`} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.15 }}>
+            {tampil.map((t, j) => (
+              <tr key={j} className="border-t border-stone-200/60">
+                <td className="py-2"><Link to={`/kegiatan/${t.kegiatan_id}`} className="font-medium text-stone-700 hover:text-brand-700">{t.kegiatan}</Link></td>
+                <td className="py-2 text-stone-500">{t.peran}</td>
+                <td className="angka py-2 text-right">{angka(t.volume)} {t.satuan}</td>
+                <td className="angka py-2 text-right">{rupiah(t.tarif)}</td>
+                <td className="angka py-2 text-right font-semibold">{rupiah(t.honor)}</td>
+              </tr>
+            ))}
+            {tampil.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-xs text-stone-400">Tidak ada kegiatan yang cocok.</td></tr>}
+          </motion.tbody>
+        </AnimatePresence>
+      </table>
+      <Paginasi halaman={hal} total={cocokQ.length} perHalaman={PER_HALAMAN_RINCIAN} ubah={setHalaman} className="mt-2 border-t border-stone-200/60 pt-2" />
     </div>
   );
 }
