@@ -103,11 +103,9 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
 
       <main className="lg:pl-64">
         <div className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-10 lg:pt-10">
-          <AnimatePresence mode="wait">
-            <motion.div key={lokasi.pathname} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
-              {children}
-            </motion.div>
-          </AnimatePresence>
+          {/* Transisi halaman memakai animasi CSS (lihat .masuk-halaman di index.css):
+              selalu selesai walau pengguna berpindah halaman dengan cepat. */}
+          <div key={lokasi.pathname} className="masuk-halaman">{children}</div>
         </div>
       </main>
 
