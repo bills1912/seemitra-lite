@@ -183,7 +183,7 @@ function ImporMitra({ buka, tutup }: { buka: boolean; tutup: () => void }) {
   const kirim = useAksi((f: File) => kirimFile<{ baru: number; diperbarui: number; dilewati: number }>('/mitra-impor', f), { setelah: (r) => setHasil(r) });
   useEffect(() => { if (!buka) { setFile(null); setHasil(null); } }, [buka]);
   return (
-    <Jendela buka={buka} tutup={tutup} judul="Impor mitra dari Excel" sub="Mitra yang sudah ada (SOBAT ID/NIK/nama sama) akan diperbarui, bukan diduplikasi."
+    <Jendela buka={buka} tutup={tutup} judul="Impor mitra dari Excel / CSV" sub="Mitra yang sudah ada (SOBAT ID/NIK/nama sama) akan diperbarui, bukan diduplikasi."
       kaki={hasil ? <Tombol onClick={tutup}>Selesai</Tombol> : <><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol disabled={!file} memuat={kirim.isPending} onClick={() => file && kirim.mutate(file)} ikon={<Upload className="size-4" />}>Impor</Tombol></>}>
       <AnimatePresence mode="wait">
         {hasil ? (
@@ -195,11 +195,11 @@ function ImporMitra({ buka, tutup }: { buka: boolean; tutup: () => void }) {
         ) : (
           <motion.div key="form" className="space-y-4">
             <ol className="space-y-1.5 text-sm text-stone-600">
-              <li>1. Unduh <button className="font-semibold text-brand-700 underline" onClick={() => unduhFile('/mitra-impor/contoh').catch((e) => beritahu('galat', e.message))}>contoh file Excel</button>, atau pakai file Anda sendiri.</li>
+              <li>1. Unduh <button className="font-semibold text-brand-700 underline" onClick={() => unduhFile('/mitra-impor/contoh').catch((e) => beritahu('galat', e.message))}>contoh file Excel</button>, atau pakai file Anda sendiri (Excel .xlsx atau CSV).</li>
               <li>2. Pastikan baris pertama berisi judul kolom. Minimal ada kolom <b>Nama</b>.</li>
               <li>3. Kolom lain yang dikenali: SOBAT ID, NIK, Jenis Kelamin, Pekerjaan, Alamat, Kecamatan, Desa, No HP, Email, Bank, No Rekening, Status, Catatan.</li>
             </ol>
-            <AreaUnggah terima=".xlsx" file={file} pilih={setFile} teks="Pilih file Excel (.xlsx)" />
+            <AreaUnggah terima=".xlsx,.csv" file={file} pilih={setFile} teks="Pilih file Excel (.xlsx) atau CSV (.csv)" />
           </motion.div>
         )}
       </AnimatePresence>

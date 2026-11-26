@@ -45,7 +45,7 @@ export function PenyediaUmpan({ children }: { children: ReactNode }) {
               exit={{ opacity: 0, x: 60, transition: { duration: 0.18 } }} transition={pegas}
               className="pointer-events-auto relative flex w-full max-w-sm items-start gap-3 overflow-hidden rounded-2xl border border-stone-200 bg-white py-3.5 pl-4 pr-3 shadow-melayang">
               <span className="mt-px">{IKON[t.jenis]}</span>
-              <div className="flex-1 text-sm font-medium text-stone-700">{t.pesan}</div>
+              <div className="min-w-0 flex-1 break-words text-sm font-medium text-stone-700">{t.pesan}</div>
               {t.urungkan && (
                 <button onClick={() => { t.urungkan!(); tutup(t.id); }} className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-bold text-brand-700 hover:bg-brand-50">
                   <Undo2 className="size-4" /> Urungkan

@@ -147,9 +147,9 @@ data.get('/mitra-impor/contoh', async (c) => {
 data.post('/mitra-impor', async (c) => {
   const body = await c.req.parseBody();
   const file = body.file as File | undefined;
-  if (!file || typeof file === 'string') throw new GagalError('Pilih file Excel terlebih dahulu.');
-  const rows = await bacaExcel(await file.arrayBuffer(), PETA_IMPOR_MITRA);
-  if (!rows.length) throw new GagalError('Tidak ada baris data yang terbaca. Pastikan baris pertama berisi judul kolom (mis. "Nama").');
+  if (!file || typeof file === 'string') throw new GagalError('Pilih file Excel (.xlsx) atau CSV terlebih dahulu.');
+  const rows = await bacaExcel(await file.arrayBuffer(), PETA_IMPOR_MITRA, file.name);
+  if (!rows.length) throw new GagalError('Tidak ada data yang terbaca. Pastikan salah satu dari 10 baris pertama berisi judul kolom, minimal kolom "Nama".');
   if (!('nama' in rows[0])) throw new GagalError('Kolom "Nama" tidak ditemukan di file Excel.');
   let baru = 0, diperbarui = 0, dilewati = 0;
   transaksi(() => {
@@ -392,8 +392,8 @@ data.post('/kegiatan/:id/petugas-impor', async (c) => {
   if (!k) throw new GagalError('Kegiatan tidak ditemukan.', 404);
   const body = await c.req.parseBody();
   const file = body.file as File | undefined;
-  if (!file || typeof file === 'string') throw new GagalError('Pilih file Excel terlebih dahulu.');
-  const rows = await bacaExcel(await file.arrayBuffer(), PETA_IMPOR_TUGAS);
+  if (!file || typeof file === 'string') throw new GagalError('Pilih file Excel (.xlsx) atau CSV terlebih dahulu.');
+  const rows = await bacaExcel(await file.arrayBuffer(), PETA_IMPOR_TUGAS, file.name);
   const tarif = JSON.parse(k.tarif || '{}') as Record<string, number>;
   const peranAwal = Object.keys(tarif)[0] ?? ambilPengaturan().daftar_peran[0];
   const tidakKetemu: string[] = [];

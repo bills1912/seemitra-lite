@@ -286,7 +286,7 @@ function ImporPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
   const kirim = useAksi((f: File) => kirimFile<{ masuk: number; tidakKetemu: string[] }>(`/kegiatan/${k.id}/petugas-impor`, f), { setelah: (r) => setHasil(r) });
   useEffect(() => { if (!buka) { setFile(null); setHasil(null); } }, [buka]);
   return (
-    <Jendela buka={buka} tutup={tutup} judul="Impor petugas dari Excel" sub={k.nama}
+    <Jendela buka={buka} tutup={tutup} judul="Impor petugas dari Excel / CSV" sub={k.nama}
       kaki={hasil ? <Tombol onClick={tutup}>Selesai</Tombol> : <><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol disabled={!file} memuat={kirim.isPending} onClick={() => file && kirim.mutate(file)} ikon={<Upload className="size-4" />}>Impor</Tombol></>}>
       {hasil ? (
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
@@ -300,8 +300,8 @@ function ImporPetugas({ buka, tutup, kegiatan: k }: { buka: boolean; tutup: () =
         </motion.div>
       ) : (
         <div className="space-y-4 text-sm text-stone-600">
-          <p>File Excel cukup berisi kolom <b>Nama</b> (atau <b>SOBAT ID</b>), <b>Peran</b>, dan <b>Volume</b>. Nama harus sama dengan nama di daftar mitra. Tarif diambil dari tarif kegiatan.</p>
-          <AreaUnggah terima=".xlsx" file={file} pilih={setFile} teks="Pilih file Excel (.xlsx)" />
+          <p>File Excel atau CSV cukup berisi kolom <b>Nama</b> (atau <b>SOBAT ID</b>), <b>Peran</b>, dan <b>Volume</b>. Nama harus sama dengan nama di daftar mitra. Tarif diambil dari tarif kegiatan.</p>
+          <AreaUnggah terima=".xlsx,.csv" file={file} pilih={setFile} teks="Pilih file Excel (.xlsx) atau CSV (.csv)" />
         </div>
       )}
     </Jendela>
