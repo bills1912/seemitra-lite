@@ -1,0 +1,34 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/plus-jakarta-sans';
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --color-brand-50: #effcf9;
+  --color-brand-100: #d7f5ee;
+  --color-brand-200: #b0eadd;
+  --color-brand-300: #7dd8c7;
+  --color-brand-400: #45bfab;
+  --color-brand-500: #22a391;
+  --color-brand-600: #168376;
+  --color-brand-700: #146a61;
+  --color-brand-800: #14554f;
+  --color-brand-900: #134742;
+  --color-kanvas: #f5f4ef;
+  --shadow-lembut: 0 1px 2px rgb(28 25 23 / 0.04), 0 4px 16px -4px rgb(28 25 23 / 0.06);
+  --shadow-melayang: 0 10px 40px -10px rgb(28 25 23 / 0.25);
+}
+
+html { -webkit-tap-highlight-color: transparent; }
+body { @apply bg-kanvas text-stone-800 antialiased; }
+::selection { background: var(--color-brand-200); }
+
+/* angka tabular agar kolom rupiah rapi */
+.angka { font-variant-numeric: tabular-nums; }
+
+/* input dasar */
+.input {
+  @apply w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-[15px] text-stone-800 outline-none transition
+    placeholder:text-stone-400 hover:border-stone-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-100 disabled:bg-stone-50;
+}
+.scroll-tipis { scrollbar-width: thin; scrollbar-color: #d6d3d1 transparent; }
+input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }

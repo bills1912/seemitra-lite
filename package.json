@@ -1,0 +1,43 @@
+{
+  "name": "seemitra-lite",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Seemitra Lite — administrasi kegiatan mitra statistik (penugasan, honor, SPK & BAST)",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "node --watch --experimental-strip-types --disable-warning=ExperimentalWarning server/index.ts",
+    "dev:web": "vite",
+    "build": "tsc -b && vite build",
+    "start": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/index.ts",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
+    "@hono/node-server": "^2.1.11",
+    "@tanstack/react-query": "^5.108.4",
+    "docxtemplater": "^3.71.1",
+    "exceljs": "^4.4.0",
+    "hono": "^4.13.22",
+    "lucide-react": "^1.81.0",
+    "motion": "^14.14.0",
+    "pizzip": "^3.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^24.19.4",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "concurrently": "^10.0.7",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}
