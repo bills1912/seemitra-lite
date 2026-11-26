@@ -42,29 +42,32 @@ export const api = {
 /** Setelah data berubah, segarkan semua tampilan agar saling sinkron. */
 export const segarkan = () => queryClient.invalidateQueries();
 
-/** Mengunduh file (Excel / Word) dari server. */
+/**
+ * Mengunduh file (Excel / Word / cadangan) dari server.
+ * Langkah 1: server menyiapkan file (galat ditampilkan sebagai pesan bila gagal).
+ * Langkah 2: browser mengunduh langsung dari alamat yang diberikan server — unduhan biasa,
+ * sehingga tidak gagal walau jendela "Simpan sebagai" dibiarkan terbuka lama.
+ */
 export async function unduhFile(url: string, body?: unknown) {
   const res = await fetch('/api' + url, {
     method: body ? 'POST' : 'GET',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: { 'X-Siapkan': '1', ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
+    credentials: 'same-origin',
   });
   if (!res.ok) {
-    let pesan = 'Gagal mengunduh file';
+    let pesan = 'Gagal menyiapkan file';
     try { pesan = (await res.json()).pesan ?? pesan; } catch { /* */ }
     throw new ApiError(pesan, res.status);
   }
-  const cd = res.headers.get('Content-Disposition') ?? '';
-  const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
-  const nama = m ? decodeURIComponent(m[1]) : 'unduhan';
-  const blob = await res.blob();
+  const { url: alamat, nama } = (await res.json()) as { url: string; nama: string };
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = alamat;
   a.download = nama;
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   return nama;
 }
 

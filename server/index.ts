@@ -11,7 +11,7 @@ import path from 'node:path';
 import { db, buatCadanganOtomatis, catat, DATA_DIR } from './db.ts';
 import { buatSesi, cocokSandi, hapusSesi, hashSandi, penggunaDariSesi, wajibLogin, type Env } from './auth.ts';
 import { GagalError } from './util.ts';
-import { data } from './routes/data.ts';
+import { data, ambilUnduhan, kirimFile } from './routes/data.ts';
 import { laporan } from './routes/laporan.ts';
 import { dokumen } from './routes/dokumen.ts';
 import { sistem } from './routes/sistem.ts';
@@ -80,6 +80,13 @@ app.post('/api/auth/masuk', async (c) => {
 app.post('/api/auth/keluar', (c) => {
   hapusSesi(c);
   return c.json({ ok: true });
+});
+
+/* ---------- Unduhan file (alamat sekali pakai berumur 15 menit) ---------- */
+app.get('/api/unduh/:token/:nama?', (c) => {
+  const u = ambilUnduhan(c.req.param('token'));
+  if (!u) return c.html('<p style="font-family:sans-serif;padding:2rem">Tautan unduhan sudah kedaluwarsa. Silakan klik tombol unduh lagi di aplikasi.</p>', 410);
+  return kirimFile(c, u.buf, u.nama, u.tipe);
 });
 
 /* ---------- API yang memerlukan login ---------- */

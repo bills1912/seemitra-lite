@@ -339,7 +339,7 @@ function TabCadangan() {
               <li key={c.nama} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
                 <span className="flex-1 font-mono text-xs text-stone-600">{c.nama}</span>
                 <span className="text-xs text-stone-400">{(c.ukuran / 1024).toFixed(0)} KB</span>
-                <Tombol kecil varian="hantu" ikon={<Download className="size-3.5" />} onClick={() => unduhFile(`/cadangan/file/${encodeURIComponent(c.nama)}`)}>Unduh</Tombol>
+                <Tombol kecil varian="hantu" ikon={<Download className="size-3.5" />} onClick={() => unduhFile(`/cadangan/file/${encodeURIComponent(c.nama)}`).catch((e) => beritahu('galat', e.message))}>Unduh</Tombol>
                 <Tombol kecil varian="hantu" ikon={<RotateCcw className="size-3.5" />} onClick={() => pulihkan({ nama: c.nama })}>Pulihkan</Tombol>
               </li>
             ))}

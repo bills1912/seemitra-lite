@@ -1,7 +1,8 @@
 /**
  * DATA UTAMA: Mitra, Kegiatan, dan Penugasan (alokasi mitra ke kegiatan).
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import crypto from 'node:crypto';
 import { db, catat, transaksi, ambilPengaturan } from '../db.ts';
 import type { Env } from '../auth.ts';
 import { GagalError, labelBulan } from '../util.ts';
@@ -446,9 +447,40 @@ data.get('/cari', (c) => {
   return c.json({ mitra, kegiatan });
 });
 
-export function unduh(c: { body: (b: Uint8Array, s: number, h: Record<string, string>) => Response }, buf: Uint8Array, nama: string, tipe?: string) {
-  return c.body(buf, 200, {
-    'Content-Type': tipe ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(nama)}`,
+/**
+ * UNDUHAN FILE
+ * Agar unduhan selalu berhasil di semua browser, file tidak dikirim lewat JavaScript.
+ * Aplikasi web meminta file dengan header "X-Siapkan: 1"; server menyimpan file sementara (15 menit)
+ * dan membalas alamat unduhan. Browser lalu mengunduh langsung dari alamat itu seperti unduhan biasa
+ * (nama file benar, bisa "Coba lagi", aman walau jendela "Simpan sebagai" dibiarkan terbuka lama).
+ */
+const MASA_SIMPAN_UNDUHAN = 15 * 60e3;
+const unduhanSementara = new Map<string, { buf: Uint8Array; nama: string; tipe: string; sampai: number }>();
+
+export function unduh(c: Context, buf: Uint8Array, nama: string, tipe?: string) {
+  const jenis = tipe ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (c.req.header('x-siapkan') === '1') {
+    const sekarang = Date.now();
+    for (const [k, v] of unduhanSementara) if (v.sampai < sekarang) unduhanSementara.delete(k);
+    const token = crypto.randomBytes(24).toString('hex');
+    unduhanSementara.set(token, { buf, nama, tipe: jenis, sampai: sekarang + MASA_SIMPAN_UNDUHAN });
+    return c.json({ url: `/api/unduh/${token}/${encodeURIComponent(nama)}`, nama });
+  }
+  return kirimFile(c, buf, nama, jenis);
+}
+
+export function kirimFile(c: Context, buf: Uint8Array, nama: string, tipe: string) {
+  const ascii = nama.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '');
+  return c.body(buf as Uint8Array<ArrayBuffer>, 200, {
+    'Content-Type': tipe,
+    'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(nama)}`,
+    'Content-Length': String(buf.byteLength),
+    'Cache-Control': 'no-store',
   });
+}
+
+export function ambilUnduhan(token: string) {
+  const u = unduhanSementara.get(token);
+  if (!u || u.sampai < Date.now()) return null;
+  return u;
 }
