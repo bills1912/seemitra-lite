@@ -67,7 +67,7 @@ export const Turnstile = forwardRef<PeganganTurnstile, { kunciSitus: string; aks
         {status === 'gagal' ? (
           <p className="mt-1 text-center text-xs text-rose-600">Pemeriksaan keamanan tidak dapat dimuat. Periksa koneksi internet lalu muat ulang halaman.</p>
         ) : status === 'memuat' && (
-          <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-stone-400"><ShieldCheck className="size-3.5" /> Memeriksa keamanan secara otomatis…</p>
+          <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-stone-400"><ShieldCheck className="size-3.5" /> Memeriksa keamanan… Bila muncul kotak, centang kotaknya.</p>
         )}
       </div>
     );

@@ -187,6 +187,13 @@ laporan.get('/beranda', (c) => {
        GROUP BY pengguna HAVING COUNT(*) > ?`,
     ).all(...AKSI_EKSPOR, batasEkspor) as { pengguna: string; n: number }[];
     for (const b of banyak) perhatian.unshift({ jenis: 'bahaya', judul: `${b.pengguna} mengekspor data ${b.n}× hari ini`, detail: `Melebihi batas wajar ${batasEkspor}×/hari. Periksa riwayat aktivitas bila ini tidak biasa.`, tautan: '/pengaturan?tab=riwayat' });
+    const gagalMasuk = satu("SELECT COUNT(*) n FROM log_masuk WHERE waktu > datetime('now','localtime','-1 hour') AND hasil NOT LIKE 'berhasil%' AND hasil NOT LIKE 'sandi benar%'");
+    if (gagalMasuk > 20) perhatian.unshift({ jenis: 'bahaya', judul: `${gagalMasuk} percobaan masuk gagal dalam 1 jam terakhir`, detail: 'Kemungkinan ada yang mencoba menebak kata sandi. Lihat Pengaturan → Keamanan.', tautan: '/pengaturan?tab=keamanan' });
+    const uji = db.prepare("SELECT nilai FROM pengaturan WHERE kunci = 'uji_pemulihan'").get() as { nilai: string } | undefined;
+    const hariUji = uji ? (Date.now() - new Date(JSON.parse(uji.nilai).waktu).getTime()) / 864e5 : Infinity;
+    if (hariUji > 90) perhatian.push({ jenis: 'info', judul: uji ? 'Saatnya latihan pemulihan cadangan' : 'Cadangan belum pernah diuji', detail: 'Lakukan "Uji pemulihan" (aman, tidak mengubah data) setiap 3 bulan.', tautan: '/pengaturan?tab=cadangan' });
+    const tanpaSandi = satu("SELECT COUNT(*) n FROM pengguna WHERE password_hash = '!'");
+    if (tanpaSandi) perhatian.push({ jenis: 'peringatan', judul: `${tanpaSandi} akun dari cadangan belum punya kata sandi`, detail: 'Atur kata sandinya di Pengaturan → Pengguna.', tautan: '/pengaturan?tab=pengguna' });
     const dibatasi = satu("SELECT COUNT(*) n FROM riwayat WHERE date(waktu) = date('now','localtime') AND aksi = 'Dibatasi: terlalu banyak permintaan'");
     if (dibatasi) perhatian.unshift({ jenis: 'peringatan', judul: `${dibatasi} kali permintaan data dibatasi hari ini`, detail: 'Ada akun yang mengambil data terlalu cepat. Lihat riwayat aktivitas.', tautan: '/pengaturan?tab=riwayat' });
   }

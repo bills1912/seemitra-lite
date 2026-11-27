@@ -1,0 +1,18 @@
+# Usulan pembaruan dependensi otomatis setiap minggu (muncul sebagai Pull Request di GitHub).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Asia/Jakarta
+    open-pull-requests-limit: 5
+    groups:
+      dependensi-kecil:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

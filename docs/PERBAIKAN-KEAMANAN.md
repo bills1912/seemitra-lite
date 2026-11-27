@@ -1,6 +1,6 @@
 # Tugas: Perbaikan Keamanan Seemitra Lite (hasil audit 27 Nov 2026)
 
-> Status: **Fase 1 selesai** (commit d91a2f9, migrasi 6) · **Fase 2 selesai** (migrasi 7). Fase 3–5 belum dikerjakan.
+> Status: **Fase 1–5 selesai** (migrasi 6–8). Butir yang perlu tindakan manual pemilik (2FA GitHub/Railway, proteksi branch, uptime monitor, proxy Cloudflare + domain sendiri, staging) dijelaskan di PANDUAN.md bagian 4. Enkripsi kolom NIK/rekening (Fase 4.2, opsional) sengaja tidak dikerjakan — lihat catatan di bawah.
 
 > **Cara pakai:** tempel seluruh isi file ini ke sesi pengembangan Seemitra Lite, atau simpan di repo (mis. `docs/PERBAIKAN-KEAMANAN.md`) lalu minta asisten: *"Kerjakan tugas di docs/PERBAIKAN-KEAMANAN.md"*.
 
@@ -269,7 +269,7 @@ Dummy key **jangan pernah** dipakai di production.
 5. **Batas laju per pengguna untuk data massal:** `GET /api/mitra`, `/api/mitra-ekspor`, `/api/rekap/ekspor`, dan pembuatan dokumen dibatasi, mis. 30 permintaan per menit per pengguna dan maksimal 10 ekspor per jam. Lebih dari itu → 429, dicatat di riwayat.
 6. **Deteksi penyedotan data:** setiap ekspor Excel atau dokumen dicatat di riwayat lengkap dengan jumlah baris. Tampilkan peringatan di Beranda admin jika satu pengguna mengekspor lebih dari N kali dalam sehari.
 
-## Fase 3 — Keamanan sesi lanjutan
+## Fase 3 — Keamanan sesi lanjutan  ✅ selesai (migrasi 8)
 
 1. **Umur sesi lebih pendek:** sesi absolut 12 jam dan idle timeout 2 jam. Perbarui `exp` saat ada aktivitas, dengan sliding expiry yang dibatasi oleh batas absolut.
 2. **Tabel `sesi`:** simpan `id`, `pengguna_id`, `dibuat`, `terakhir_aktif`, `ip`, `user_agent`, dan `dicabut`. Cookie cukup berisi `id` sesi yang ditandatangani. Dengan ini:
@@ -279,7 +279,7 @@ Dummy key **jangan pernah** dipakai di production.
 4. **Catatan login:** setiap login (berhasil maupun gagal) dicatat di tabel `log_masuk` (waktu, username yang dinormalisasi, IP, user agent, hasil). Admin mendapat peringatan di Beranda jika ada lebih dari 20 kegagalan per jam.
 5. **Kebijakan sandi:** minimal 10 karakter untuk admin. Tolak sandi yang sama dengan username atau ada di daftar sandi umum (misalnya 1.000 teratas, disimpan lokal). Opsional: **2FA TOTP untuk admin**, mis. memakai `otpauth` + QR.
 
-## Fase 4 — Anti espionase (kebocoran data & ancaman orang dalam)
+## Fase 4 — Anti espionase (kebocoran data & ancaman orang dalam)  ✅ selesai (kecuali 4.2, lihat catatan)
 
 1. **Enkripsi file backup:**
    - Unduhan backup dienkripsi AES-256-GCM dengan kunci dari sandi yang dimasukkan admin saat mengunduh (turunkan kuncinya dengan scrypt dan salt acak), lalu disimpan dengan format `.seemitra-backup`.
@@ -295,7 +295,7 @@ Dummy key **jangan pernah** dipakai di production.
 4. **Peran lebih halus:** tambahkan peran `pengamat` (hanya baca, tanpa data sensitif). Untuk operator, pertimbangkan izin `boleh_ekspor` yang diatur admin.
 5. **Kebijakan kantor (non-teknis):** backup hanya disimpan di folder Drive dengan akses terbatas (bukan "siapa saja yang punya link"), PC kantor wajib dikunci saat ditinggal, dan akun pegawai yang keluar segera dinonaktifkan.
 
-## Fase 5 — Anti hack & ketahanan (agar sistem tidak jatuh)
+## Fase 5 — Anti hack & ketahanan (agar sistem tidak jatuh)  ✅ bagian kode selesai; butir manual di PANDUAN.md
 
 1. **Akun platform:** wajib 2FA di GitHub dan Railway. Batasi siapa saja yang menjadi anggota project Railway.
 2. **Proteksi branch `main`:** wajib lewat Pull Request, dan PR harus lulus `npm run build`. Tambahkan GitHub Action sederhana (`npm ci && npm run build`) yang memblokir merge bila gagal.
@@ -323,3 +323,11 @@ Setelah selesai mengerjakan **Fase 1 (Prioritas 1–5)**, buat ringkasan berisi:
 - langkah manual yang perlu dilakukan pemilik di Railway: `SESSION_SECRET`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, dan opsional `SETUP_TOKEN`.
 
 Jangan kerjakan Fase 2–5 sebelum diminta. Untuk tiap fase, buat rencana singkat dulu dan tunggu persetujuan.
+
+---
+
+## Catatan keputusan
+
+- **Fase 4.2 (enkripsi kolom NIK/rekening) tidak dikerjakan.** Risikonya lebih besar daripada manfaatnya untuk aplikasi ini: bila `DATA_KEY` hilang, seluruh NIK & rekening hilang permanen; pencarian & impor jadi rumit. Perlindungan yang sudah ada: database hanya di volume Railway privat, tampilan tersamar + akses tercatat, cadangan terenkripsi tanpa rahasia akun.
+- **Fase 3.1:** sesi 12 jam / diam 2 jam. **Keluar** kini hanya mengakhiri perangkat yang sedang dipakai; "keluar dari semua perangkat" tersedia di menu Akun saya.
+- **Fase 5.6 (staging):** tidak dibuat otomatis karena menambah biaya Railway. Cara membuat: Railway → proyek → *Environments → New environment* (salin dari production), pasang volume & variabel baru (`SETUP_TOKEN` wajib, `SESSION_SECRET` & `BACKUP_KEY` berbeda), gunakan data dummy.

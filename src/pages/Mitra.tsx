@@ -297,6 +297,7 @@ function DetailMitra({ id, tutup, ubah }: { id: number | null; tutup: () => void
     setMemuatSensitif(true);
     try { setSensitif(await api.get(`/mitra/${m.id}/sensitif`)); } finally { setMemuatSensitif(false); }
   };
+  const pengamat = useSaya().data?.pengguna?.peran === 'pengamat';
   const nik = sensitif ? sensitif.nik : m?.nik;
   const rekening = sensitif ? sensitif.no_rekening : m?.no_rekening;
 
@@ -331,7 +332,7 @@ function DetailMitra({ id, tutup, ubah }: { id: number | null; tutup: () => void
             ].map(([ik, l, v], i) => (
               <div key={i} className="flex gap-3"><span className="mt-0.5 text-stone-400">{ik}</span><div><div className="text-xs text-stone-400">{l}</div><div className="font-medium text-stone-700">{v || '—'}</div></div></div>
             ))}
-            {(m.nik || m.no_rekening) && (
+            {(m.nik || m.no_rekening) && !pengamat && (
               <div className="sm:col-span-2">
                 {sensitif
                   ? <button onClick={() => setSensitif(null)} className="flex items-center gap-1.5 text-xs font-semibold text-stone-500 hover:text-stone-700"><EyeOff className="size-3.5" /> Sembunyikan NIK & rekening</button>

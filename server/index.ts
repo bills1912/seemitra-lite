@@ -11,8 +11,12 @@ import { secureHeaders } from 'hono/secure-headers';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, ambilPengaturan, buatCadanganOtomatis, catat, transaksi, DATA_DIR } from './db.ts';
-import { buatSesi, cabutSemuaSesi, cocokSandi, cocokSandiTiruan, hapusSesi, hashSandi, penggunaDariSesi, wajibLogin, type Env } from './auth.ts';
+import { db, ambilPengaturan, buatCadanganOtomatis, catat, kunciRahasia, transaksi, DATA_DIR } from './db.ts';
+import { bacaSesi, bersihkanSesi, buatSesi, cabutSesi, cocokSandi, cocokSandiTiruan, hapusSesi, hashSandi, penggunaDariSesi, bolehEkspor, PESAN_TANPA_IZIN_EKSPOR, wajibLogin, type Env } from './auth.ts';
+import { cekSandiBaru } from './sandi.ts';
+import { cekKodeTotp } from './totp.ts';
+import { akun } from './routes/akun.ts';
+import { pastikanCadanganLuar, unggahCadanganLuar } from './s3.ts';
 import { cekTurnstile, ipKlien, KUNCI_SITUS, turnstileAktif } from './turnstile.ts';
 import { batasiPengguna, buatPembatas } from './pembatas.ts';
 import { GagalError } from './util.ts';
@@ -65,6 +69,25 @@ app.use('/api/auth/*', bodyLimit({ maxSize: 16 * KB, onError: terlaluBesar('16 K
 const batasCadangan = bodyLimit({ maxSize: 200 * MB, onError: terlaluBesar('200 MB') });
 const batasUmum = bodyLimit({ maxSize: 5 * MB, onError: terlaluBesar('5 MB') });
 app.use('/api/*', (c, next) => (c.req.path === '/api/cadangan/pulihkan' ? batasCadangan(c, next) : batasUmum(c, next)));
+
+/* ---------- Cek asal permintaan (anti CSRF) ----------
+ * Perubahan data (POST/PUT/DELETE) hanya diterima dari halaman aplikasi ini sendiri. */
+const ALAMAT_SAH = new Set([process.env.RAILWAY_PUBLIC_DOMAIN, ...(process.env.ALAMAT_APLIKASI ?? '').split(',')].map((x) => (x ?? '').trim().toLowerCase()).filter(Boolean));
+function asalSah(c: import('hono').Context) {
+  const situs = c.req.header('sec-fetch-site');
+  if (situs && situs !== 'same-origin' && situs !== 'none') return false;
+  const asal = c.req.header('origin');
+  if (!asal) return true; // bukan dari browser lintas situs (browser selalu mengirim Origin untuk POST lintas situs)
+  let host: string;
+  try { host = new URL(asal).host.toLowerCase(); } catch { return false; }
+  return host === (c.req.header('host') ?? '').toLowerCase() || host === (c.req.header('x-forwarded-host') ?? '').toLowerCase() || ALAMAT_SAH.has(host);
+}
+app.use('/api/*', async (c, next) => {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && !asalSah(c)) {
+    return c.json({ pesan: 'Permintaan ditolak: asal halaman tidak dikenal. Buka aplikasi dari alamat resminya lalu coba lagi.' }, 403);
+  }
+  await next();
+});
 
 app.get('/api/sehat', (c) => c.json({ ok: true }));
 
@@ -127,9 +150,9 @@ app.post('/api/auth/daftar', async (c) => {
   if (!nama || !username || !sandi) throw new GagalError('Semua isian wajib diisi.');
   if (nama.length > 100) throw new GagalError('Nama maksimal 100 karakter.');
   if (!/^[A-Za-z0-9._-]{3,30}$/.test(username)) throw new GagalError('Username 3–30 karakter, hanya huruf, angka, titik, garis bawah, atau strip.');
-  if (sandi.length < 6 || sandi.length > 128) throw new GagalError('Kata sandi 6–128 karakter.');
   const pertama = jumlahPengguna() === 0;
   const undangan = pertama ? undefined : cariUndangan(body.undangan);
+  cekSandiBaru(sandi, username, pertama ? 'admin' : undangan?.peran ?? 'operator');
   if (!pertama && !undangan) {
     if (body.undangan) { daftarPerIp.tambah(ip); throw new GagalError('Tautan undangan tidak berlaku (sudah dipakai, dibatalkan, atau lewat 72 jam). Minta tautan baru kepada admin.', 403); }
     if (!ambilPengaturan().pendaftaran_terbuka) throw new GagalError('Pendaftaran hanya bisa lewat tautan undangan dari admin.', 403);
@@ -166,34 +189,81 @@ app.post('/api/auth/daftar', async (c) => {
   return c.json({ ok: true, masuk: false });
 });
 
+/** Catatan setiap percobaan masuk (berhasil maupun gagal) — dilihat admin di Pengaturan → Keamanan. */
+function catatMasuk(c: import('hono').Context, username: string, hasil: string) {
+  db.prepare('INSERT INTO log_masuk (username, ip, user_agent, hasil) VALUES (?, ?, ?, ?)')
+    .run(username.slice(0, 64) || '-', ipKlien(c), (c.req.header('user-agent') ?? '').slice(0, 300), hasil);
+}
+
+/* Tiket verifikasi 2 langkah: diberikan setelah sandi benar, berlaku 5 menit, ditandatangani server. */
+const MASA_TIKET_MS = 5 * 60e3;
+const ttdTiket = (isi: string) => crypto.createHmac('sha256', kunciRahasia()).update('tiket2fa:' + isi).digest('base64url');
+const buatTiket = (id: number) => { const isi = Buffer.from(JSON.stringify({ id, exp: Date.now() + MASA_TIKET_MS })).toString('base64url'); return `${isi}.${ttdTiket(isi)}`; };
+function bacaTiket(t: unknown): number | null {
+  if (typeof t !== 'string' || t.length > 300) return null;
+  const [isi, ttd] = t.split('.');
+  if (!isi || !ttd || !samaPersis(ttdTiket(isi), ttd)) return null;
+  try { const { id, exp } = JSON.parse(Buffer.from(isi, 'base64url').toString()); return typeof exp === 'number' && Date.now() < exp && Number.isInteger(id) ? id : null; } catch { return null; }
+}
+
 app.post('/api/auth/masuk', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const ip = ipKlien(c);
   // username dinormalisasi sekali, dipakai untuk pembatas DAN pencarian akun
   const u = String(typeof body.username === 'string' ? body.username : '').trim().toLowerCase().slice(0, 64);
   const sandi = typeof body.sandi === 'string' ? body.sandi.slice(0, 256) : '';
-  if (gagalPerAkun.penuh(u) || gagalPerIp.penuh(ip)) throw new GagalError(PESAN_TERLALU_BANYAK, 429);
+  if (gagalPerAkun.penuh(u) || gagalPerIp.penuh(ip)) { catatMasuk(c, u, 'dikunci sementara'); throw new GagalError(PESAN_TERLALU_BANYAK, 429); }
   // CAPTCHA diperiksa sebelum database & hash sandi supaya bot tidak membebani server
   if (!(await cekTurnstile(body.turnstile, ip, 'masuk'))) {
     gagalPerIp.tambah(ip);
+    catatMasuk(c, u, 'gagal pemeriksaan keamanan');
     throw new GagalError(PESAN_CAPTCHA, 403);
   }
-  const akun = u ? db.prepare('SELECT id, nama, password_hash, status FROM pengguna WHERE username = ? COLLATE NOCASE').get(u) as
-    | { id: number; nama: string; password_hash: string; status: string } | undefined : undefined;
+  const akun = u ? db.prepare('SELECT id, nama, password_hash, status, totp_aktif FROM pengguna WHERE username = ? COLLATE NOCASE').get(u) as
+    | { id: number; nama: string; password_hash: string; status: string; totp_aktif: number } | undefined : undefined;
   const benar = akun ? await cocokSandi(sandi, akun.password_hash) : await cocokSandiTiruan(sandi);
   if (!akun || !benar) {
     gagalPerAkun.tambah(u);
     gagalPerIp.tambah(ip);
+    catatMasuk(c, u, akun ? 'sandi salah' : 'username tidak dikenal');
     throw new GagalError('Username atau kata sandi salah.', 401);
   }
+  if (akun.status !== 'aktif') { catatMasuk(c, u, 'belum disetujui'); throw new GagalError('Akun Anda sudah terdaftar tetapi belum disetujui admin. Hubungi admin aplikasi.', 403); }
+  if (akun.totp_aktif) {
+    catatMasuk(c, u, 'sandi benar, menunggu kode 2 langkah');
+    return c.json({ ok: true, perlu2fa: true, tiket: buatTiket(akun.id) });
+  }
   gagalPerAkun.hapus(u);
-  if (akun.status !== 'aktif') throw new GagalError('Akun Anda sudah terdaftar tetapi belum disetujui admin. Hubungi admin aplikasi.', 403);
   buatSesi(c, akun.id);
+  catatMasuk(c, u, 'berhasil');
   return c.json({ ok: true });
 });
+
+/** Langkah kedua: kode 6 angka dari aplikasi autentikator. */
+app.post('/api/auth/masuk-2fa', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ip = ipKlien(c);
+  const id = bacaTiket(body.tiket);
+  if (!id) throw new GagalError('Waktu memasukkan kode sudah habis. Silakan masuk ulang.', 401);
+  const akun = db.prepare("SELECT id, username, totp_rahasia, totp_aktif FROM pengguna WHERE id = ? AND status = 'aktif'").get(id) as
+    { id: number; username: string; totp_rahasia: string | null; totp_aktif: number } | undefined;
+  if (!akun) throw new GagalError('Akun tidak ditemukan.', 401);
+  const u = akun.username.toLowerCase();
+  if (gagalPerAkun.penuh(u) || gagalPerIp.penuh(ip)) { catatMasuk(c, u, 'dikunci sementara'); throw new GagalError(PESAN_TERLALU_BANYAK, 429); }
+  if (!akun.totp_aktif || !akun.totp_rahasia || !cekKodeTotp(akun.totp_rahasia, body.kode)) {
+    gagalPerAkun.tambah(u); gagalPerIp.tambah(ip);
+    catatMasuk(c, u, 'kode 2 langkah salah');
+    throw new GagalError('Kode salah. Periksa 6 angka terbaru di aplikasi autentikator Anda.', 401);
+  }
+  gagalPerAkun.hapus(u);
+  buatSesi(c, akun.id);
+  catatMasuk(c, u, 'berhasil (2 langkah)');
+  return c.json({ ok: true });
+});
+
 app.post('/api/auth/keluar', (c) => {
-  const p = penggunaDariSesi(c);
-  if (p) cabutSemuaSesi(p.id); // cookie yang tersalin di tempat lain ikut tidak berlaku
+  const s = bacaSesi(c);
+  if (s) cabutSesi(s.id); // hanya perangkat ini; "keluar dari semua perangkat" ada di menu Akun
   hapusSesi(c);
   return c.json({ ok: true });
 });
@@ -208,17 +278,34 @@ app.get('/api/unduh/:token/:nama?', (c) => {
 /* ---------- API yang memerlukan login ---------- */
 app.use('/api/*', wajibLogin);
 
+/* ---------- Peran "pengamat": hanya melihat ---------- */
+const BOLEH_UNTUK_PENGAMAT = ['/api/ganti-sandi', '/api/akun/'];
+app.use('/api/*', async (c, next) => {
+  const p = c.get('pengguna');
+  if (p.peran === 'pengamat') {
+    const ubah = !['GET', 'HEAD'].includes(c.req.method);
+    if ((ubah && !BOLEH_UNTUK_PENGAMAT.some((x) => c.req.path.startsWith(x))) || /^\/api\/mitra\/\d+\/sensitif$/.test(c.req.path)) {
+      return c.json({ pesan: 'Akun Anda hanya untuk melihat data (pengamat). Hubungi admin bila perlu mengubah data.' }, 403);
+    }
+  }
+  await next();
+});
+
 /* ---------- Batas laju per pengguna untuk data massal (anti sedot data) ---------- */
 const batasDaftarMitra = batasiPengguna('daftar mitra', 60, 60e3, 'Terlalu sering memuat daftar mitra.');
 const batasEkspor = batasiPengguna('ekspor Excel', 10, 60 * 60e3, 'Batas ekspor Excel (10 kali per jam) tercapai.');
 const batasDokumen = batasiPengguna('pembuatan SPK/BAST', 30, 60 * 60e3, 'Batas pembuatan SPK/BAST (30 kali per jam) tercapai.');
-app.use('/api/*', (c, next) => {
+app.use('/api/*', async (c, next) => {
   const p = c.req.path, m = c.req.method;
   if (m === 'GET' && p === '/api/mitra') return batasDaftarMitra(c, next);
-  if (m === 'GET' && (p === '/api/mitra-ekspor' || p === '/api/rekap/ekspor')) return batasEkspor(c, next);
-  if (m === 'POST' && (p === '/api/dokumen/spk' || p === '/api/dokumen/bast')) return batasDokumen(c, next);
+  const ekspor = m === 'GET' && (p === '/api/mitra-ekspor' || p === '/api/rekap/ekspor');
+  const dokumen = m === 'POST' && (p === '/api/dokumen/spk' || p === '/api/dokumen/bast');
+  if ((ekspor || dokumen) && !bolehEkspor(c.get('pengguna'))) return c.json({ pesan: PESAN_TANPA_IZIN_EKSPOR }, 403);
+  if (ekspor) return batasEkspor(c, next);
+  if (dokumen) return batasDokumen(c, next);
   return next();
 });
+app.route('/api', akun);
 app.route('/api', data);
 app.route('/api', laporan);
 app.route('/api', dokumen);
@@ -239,5 +326,11 @@ serve({ fetch: app.fetch, port: PORT, hostname: '0.0.0.0' }, () => {
   console.log(`Seemitra Lite berjalan di http://localhost:${PORT}  (data: ${DATA_DIR})`);
 });
 
-buatCadanganOtomatis();
-setInterval(buatCadanganOtomatis, 6 * 3600e3);
+/* ---------- Pekerjaan berkala: cadangan harian (+ salinan ke penyimpanan luar), bersih-bersih sesi ---------- */
+function tugasBerkala() {
+  const nama = buatCadanganOtomatis();
+  (nama ? unggahCadanganLuar(nama) : pastikanCadanganLuar()).catch((e) => console.error('[cadangan-luar] gagal:', e));
+  try { bersihkanSesi(); } catch (e) { console.error(e); }
+}
+tugasBerkala();
+setInterval(tugasBerkala, 6 * 3600e3);

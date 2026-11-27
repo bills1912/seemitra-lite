@@ -78,6 +78,9 @@ Buka layanan **seemitra-lite** → tab **Variables**, lalu isi:
 | `SESSION_SECRET` | teks acak 64 karakter (buat di [it-tools.tech/token-generator](https://it-tools.tech/token-generator) atau `openssl rand -hex 32`) | **Wajib.** Kunci tanda tangan login. Mengganti nilainya = semua orang otomatis keluar (lakukan bila curiga ada kebocoran). |
 | `TURNSTILE_SITE_KEY` dan `TURNSTILE_SECRET_KEY` | dari Cloudflare → Turnstile → *Add widget* (mode **Managed**, hostname = alamat aplikasi) | Pemeriksaan anti-bot di halaman masuk & daftar. Biasanya berjalan otomatis tanpa diklik. |
 | `SETUP_TOKEN` | kode bebas | Opsional. Hanya dipakai saat aplikasi masih kosong: pendaftar pertama (admin) wajib memasukkan kode ini. |
+| `BACKUP_KEY` | teks acak 64 karakter (`openssl rand -hex 32`) | Mengunci (enkripsi) cadangan otomatis harian di server. **Salin & simpan nilainya di tempat aman di luar Railway** — tanpa kunci ini cadangan otomatis tidak bisa dibuka. |
+| `CADANGAN_S3_*` | rujukan ke bucket `seemitra-cadangan` (sudah terpasang) | Salinan cadangan harian terenkripsi dikirim ke bucket terpisah (90 salinan terakhir). |
+| `ALAMAT_APLIKASI` | mis. `seemitra.kantor.go.id` | Opsional. Hanya bila memakai domain sendiri; alamat `*.up.railway.app` sudah dikenali otomatis. |
 | `PERCAYA_CLOUDFLARE` | `1` | **Hanya** bila aplikasi dibuka lewat domain sendiri yang di-proxy Cloudflare (lihat di bawah). Jangan diisi bila memakai alamat `*.up.railway.app`. |
 
 Setelah mengubah Variables, Railway menjalankan ulang aplikasi otomatis. Hal-hal lain yang sudah aktif tanpa pengaturan:
@@ -89,6 +92,26 @@ Setelah mengubah Variables, Railway menjalankan ulang aplikasi otomatis. Hal-hal
 - **NIK & nomor rekening tampil tersamar** (mis. `1278••••••••0012`). Klik *Tampilkan NIK & rekening lengkap* di detail mitra bila perlu — setiap akses tercatat di riwayat. Ekspor Excel oleh operator juga tersamar; ekspor admin tetap lengkap. SPK/BAST selalu memakai data asli.
 - Pengambilan data dibatasi per pengguna: ekspor Excel 10×/jam, pembuatan SPK/BAST 30×/jam, muat daftar mitra 60×/menit. Bila ada yang mengekspor melebihi batas wajar harian (bawaan 10×, bisa diubah di *Keamanan akses*), Beranda admin menampilkan peringatan.
 - Aplikasi tidak diindeks mesin pencari (Google dsb.).
+- **Sesi masuk** berakhir otomatis setelah **2 jam tidak dipakai** atau **12 jam** sejak masuk. Daftar perangkat yang sedang masuk ada di **Akun saya**; admin melihat semua sesi dan **catatan masuk** di **Pengaturan → Keamanan**.
+- **Verifikasi 2 langkah** (Akun saya → Aktifkan): setelah kata sandi, diminta 6 angka dari aplikasi Google/Microsoft Authenticator. Sangat disarankan untuk admin. Bila HP hilang, admin lain bisa mereset dari menu Pengguna.
+- **Kata sandi**: admin minimal 10 karakter, lainnya minimal 6, tidak boleh memuat username atau termasuk kata sandi umum. Tips mudah diingat: gabungkan 3 kata, mis. `kopi-pagi-gunungtua`.
+- **Peran**: *Admin* (semua), *Operator* (kelola data; izin ekspor/SPK bisa dicabut per orang), *Pengamat* (hanya melihat, tanpa data pribadi & ekspor).
+- **Cadangan yang diunduh dikunci kata sandi** (file `.seemitra-backup`). Catat kata sandinya terpisah dari file. Tekan **Uji** setiap 3 bulan (aman, tidak mengubah data) — Beranda mengingatkan bila sudah waktunya.
+- **Riwayat aktivitas tidak bisa dihapus/diubah**, dan setiap baris terkunci berantai. Tombol **Periksa sekarang** (Pengaturan → Keamanan) mendeteksi bila ada yang memalsukannya langsung di database.
+- Saat **memulihkan cadangan**, akun pengguna dan riwayat aktivitas **tidak** ditimpa.
+
+#### Kebijakan kantor (non-teknis, wajib dijalankan)
+- File cadangan hanya disimpan di folder Google Drive dengan **akses terbatas** (bukan "siapa saja yang memiliki link").
+- PC/laptop kantor **dikunci** (Windows + L) setiap ditinggal.
+- Pegawai yang pindah/keluar: **hapus atau nonaktifkan akunnya hari itu juga**.
+- Jangan berbagi akun; setiap orang memakai akunnya sendiri.
+- Akun **GitHub** dan **Railway** pemilik aplikasi wajib memakai **verifikasi 2 langkah**, dan anggota proyek Railway dibatasi seperlunya.
+
+#### Pemeriksaan otomatis & pemantauan
+- Setiap perubahan kode diperiksa otomatis oleh GitHub (*Actions → Periksa*: build + audit keamanan dependensi). **Dependabot** mengusulkan pembaruan dependensi setiap Senin.
+- Disarankan (sekali atur, gratis): **UptimeRobot** → *Add monitor* → HTTP(s) → `https://seemitra-lite-production.up.railway.app/api/sehat`, interval 5 menit, notifikasi email/WhatsApp.
+- Disarankan: GitHub → repo → **Settings → Branches → Add rule** untuk `main`: centang *Require status checks* (pilih `build`) dan *Do not allow force pushes / deletions*. Railway → layanan → **Settings → "Wait for CI"** agar deploy menunggu pemeriksaan lulus.
+- Rencana bila terjadi insiden: lihat `docs/RENCANA-INSIDEN.md`.
 
 #### (Opsional) Memasang Cloudflare di depan aplikasi
 Butuh domain sendiri (mis. `seemitra.bpspaluta.id`). Tambahkan domain itu di Cloudflare (ikon awan oranye = *Proxied*), arahkan ke Railway (*Settings → Networking → Custom Domain*), lalu di Cloudflare: aktifkan **Security → Bots → Bot Fight Mode**, dan buat aturan **Security → WAF → Rate limiting**: jalur `/api/auth/` maksimal 10 permintaan per menit per IP. Setelah itu isi `PERCAYA_CLOUDFLARE=1` di Railway dan tambahkan domain baru ke widget Turnstile.
@@ -117,6 +140,8 @@ Jika hasilnya gagal, gunakan **Rollback** seperti di atas.
 | `Dockerfile`, `railway.json` | Resep untuk Railway |
 | `server/auth.ts`, `server/turnstile.ts` | Login, sesi, dan pemeriksaan anti-bot |
 | `docs/PERBAIKAN-KEAMANAN.md` | Hasil audit keamanan & rencana keamanan bertahap |
+| `docs/RENCANA-INSIDEN.md` | Langkah-langkah bila terjadi insiden keamanan |
+| `server/data/sandi-umum.txt` | Daftar kata sandi terlalu umum (boleh ditambah, satu per baris) |
 
 Menjalankan di komputer sendiri (butuh Node.js 22.18+ / 24):
 ```bash

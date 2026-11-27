@@ -1,0 +1,26 @@
+# Pemeriksaan otomatis setiap ada perubahan: typecheck + build + audit keamanan dependensi.
+# Bila gagal, tanda silang merah muncul di GitHub; Railway bisa diatur menunggu pemeriksaan ini sebelum deploy.
+name: Periksa
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Audit keamanan dependensi (gagal bila ada temuan high/critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Server bisa dinyalakan
+        run: |
+          DATA_DIR=$(mktemp -d) PORT=3999 node --experimental-strip-types --disable-warning=ExperimentalWarning server/index.ts &
+          for i in $(seq 1 30); do curl -sf http://localhost:3999/api/sehat && exit 0; sleep 1; done; exit 1

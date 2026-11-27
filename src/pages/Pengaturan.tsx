@@ -22,6 +22,7 @@ const TAB = [
   { id: 'pengguna', label: 'Pengguna', ikon: UserCog, admin: true },
   { id: 'cadangan', label: 'Cadangan data', ikon: DatabaseBackup, admin: true },
   { id: 'reset', label: 'Reset data', ikon: AlertOctagon, admin: true },
+  { id: 'keamanan', label: 'Keamanan', ikon: ShieldCheck, admin: true },
   { id: 'riwayat', label: 'Riwayat aktivitas', ikon: History, admin: false },
   { id: 'akun', label: 'Akun saya', ikon: KeyRound, admin: false },
 ] as const;
@@ -57,7 +58,8 @@ export function HalamanPengaturan() {
             {tab === 'cadangan' && <TabCadangan />}
             {tab === 'reset' && <TabReset />}
             {tab === 'riwayat' && <TabRiwayat />}
-            {tab === 'akun' && <TabAkun />}
+            {tab === 'akun' && <div className="space-y-5"><TabAkun /><PanelSesiSaya /><Panel2Langkah /></div>}
+            {tab === 'keamanan' && <TabKeamanan />}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -349,15 +351,21 @@ function TabTemplate({ admin }: { admin: boolean }) {
   );
 }
 
+const OPSI_PERAN = [
+  { nilai: 'operator', label: 'Operator — mengelola mitra, kegiatan, honor, dokumen' },
+  { nilai: 'pengamat', label: 'Pengamat — hanya melihat, tanpa data pribadi & ekspor' },
+  { nilai: 'admin', label: 'Admin — semua akses termasuk pengaturan' },
+];
+
 function TabPengguna({ saya }: { saya?: number }) {
   const { data } = useQuery({ queryKey: ['pengguna'], queryFn: () => api.get<Pengguna[]>('/pengguna') });
-  const [form, setForm] = useState<(Partial<Pengguna> & { sandi?: string }) | null>(null);
+  const [form, setForm] = useState<(Partial<Pengguna> & { sandi?: string; matikan_2fa?: boolean }) | null>(null);
   const { konfirmasi } = useUmpan();
-  const simpan = useAksi((v: Partial<Pengguna> & { sandi?: string }) => (v.id ? api.put(`/pengguna/${v.id}`, v) : api.post('/pengguna', v)), { sukses: 'Pengguna disimpan.', setelah: () => setForm(null) });
+  const simpan = useAksi((v: Partial<Pengguna> & { sandi?: string; matikan_2fa?: boolean }) => (v.id ? api.put(`/pengguna/${v.id}`, v) : api.post('/pengguna', v)), { sukses: 'Pengguna disimpan.', setelah: () => setForm(null) });
   const hapus = useAksi((u: Pengguna) => api.del(`/pengguna/${u.id}`), { sukses: 'Pengguna dihapus.' });
   const setujui = useAksi((u: Pengguna) => api.post(`/pengguna/${u.id}/setujui`), { sukses: (_, u) => `${u.nama} kini dapat masuk ke aplikasi.` });
   return (
-    <Panel judul="Pengguna aplikasi" ket={<><b>Admin</b> dapat mengubah semua pengaturan. <b>Operator</b> dapat mengelola mitra, kegiatan, honor, dan dokumen. Cara termudah menambah pengguna: buat <b>tautan undangan</b> di bawah lalu kirim lewat WhatsApp.</>}>
+    <Panel judul="Pengguna aplikasi" ket={<><b>Admin</b> dapat mengubah semua pengaturan. <b>Operator</b> dapat mengelola mitra, kegiatan, honor, dan dokumen. <b>Pengamat</b> hanya bisa melihat. Cara termudah menambah pengguna: buat <b>tautan undangan</b> di bawah lalu kirim lewat WhatsApp.</>}>
       <div className="mb-4 flex justify-end"><Tombol kecil ikon={<Plus className="size-4" />} onClick={() => setForm({ peran: 'operator' })}>Tambah pengguna</Tombol></div>
       <ul className="divide-y divide-stone-100">
         {data?.map((u) => (
@@ -369,6 +377,9 @@ function TabPengguna({ saya }: { saya?: number }) {
               <Tombol kecil onClick={() => setujui.mutate(u)}>Setujui</Tombol>
               <Tombol kecil varian="hantu" onClick={async () => (await konfirmasi({ judul: `Tolak pendaftaran ${u.nama}?`, pesan: 'Akun pendaftar akan dihapus.', bahaya: true, tombol: 'Tolak' })) && hapus.mutate(u)}>Tolak</Tombol>
             </> : <>
+              {!!u.totp_aktif && <Lencana warna="hijau">2 langkah</Lencana>}
+              {!!u.perlu_sandi && <Lencana warna="kuning" titik>perlu kata sandi</Lencana>}
+              {u.peran === 'operator' && !u.boleh_ekspor && <Lencana>tanpa ekspor</Lencana>}
               <Lencana warna={u.peran === 'admin' ? 'brand' : 'abu'}>{u.peran}</Lencana>
               <TombolIkon label="Ubah" onClick={() => setForm(u)}><Pencil className="size-4" /></TombolIkon>
               {u.id !== saya && <TombolIkon label="Hapus" onClick={async () => (await konfirmasi({ judul: `Hapus ${u.nama}?`, bahaya: true, tombol: 'Hapus' })) && hapus.mutate(u)}><Trash2 className="size-4" /></TombolIkon>}
@@ -382,8 +393,10 @@ function TabPengguna({ saya }: { saya?: number }) {
           <div className="space-y-4">
             <Kolom label="Nama" wajib><Masukan value={form.nama ?? ''} onChange={(e) => setForm({ ...form, nama: e.target.value })} /></Kolom>
             <Kolom label="Username" wajib><Masukan disabled={!!form.id} value={form.username ?? ''} onChange={(e) => setForm({ ...form, username: e.target.value })} /></Kolom>
-            <Kolom label={form.id ? 'Kata sandi baru' : 'Kata sandi'} wajib={!form.id} petunjuk={form.id ? 'Kosongkan jika tidak diganti.' : 'Minimal 6 karakter.'}><Masukan type="text" value={form.sandi ?? ''} onChange={(e) => setForm({ ...form, sandi: e.target.value })} /></Kolom>
-            <Kolom label="Peran"><Pilihan nilai={form.peran ?? 'operator'} ubah={(v) => setForm({ ...form, peran: v as Pengguna['peran'] })} opsi={[{ nilai: 'operator', label: 'Operator' }, { nilai: 'admin', label: 'Admin' }]} /></Kolom>
+            <Kolom label="Peran"><Pilihan nilai={form.peran ?? 'operator'} ubah={(v) => setForm({ ...form, peran: v as Pengguna['peran'] })} opsi={OPSI_PERAN} /></Kolom>
+            <Kolom label={form.id ? 'Kata sandi baru' : 'Kata sandi'} wajib={!form.id} petunjuk={`${form.id ? 'Kosongkan jika tidak diganti. ' : ''}Minimal ${form.peran === 'admin' ? 10 : 6} karakter, bukan kata umum.`}><Masukan type="text" value={form.sandi ?? ''} onChange={(e) => setForm({ ...form, sandi: e.target.value })} /></Kolom>
+            {form.peran === 'operator' && <Kotak aktif={form.boleh_ekspor !== 0} ubah={(v) => setForm({ ...form, boleh_ekspor: v ? 1 : 0 })} label={<span className="text-sm">Boleh mengekspor Excel & membuat SPK/BAST</span>} />}
+            {!!form.totp_aktif && <Kotak aktif={!!form.matikan_2fa} ubah={(v) => setForm({ ...form, matikan_2fa: v })} label={<span className="text-sm">Reset verifikasi 2 langkah (bila HP pengguna hilang/ganti)</span>} />}
           </div>
         )}
       </Jendela>
@@ -446,7 +459,7 @@ function PanelUndangan() {
         ) : (
           <div className="space-y-4">
             <Kolom label="Untuk siapa?" petunjuk="Opsional — nama ini otomatis terisi di formulir pendaftaran."><Masukan value={isian.untuk} onChange={(e) => setIsian({ ...isian, untuk: e.target.value })} placeholder="mis. Siti Harahap" /></Kolom>
-            <Kolom label="Peran"><Pilihan nilai={isian.peran} ubah={(v) => setIsian({ ...isian, peran: v })} opsi={[{ nilai: 'operator', label: 'Operator — mengelola mitra, kegiatan, honor, dokumen' }, { nilai: 'admin', label: 'Admin — semua akses termasuk pengaturan' }]} /></Kolom>
+            <Kolom label="Peran"><Pilihan nilai={isian.peran} ubah={(v) => setIsian({ ...isian, peran: v })} opsi={OPSI_PERAN} /></Kolom>
           </div>
         )}
       </Jendela>
@@ -478,55 +491,117 @@ function PanelKeamananAkses() {
   );
 }
 
+type InfoCadangan = {
+  daftar: { nama: string; ukuran: number; waktu: string; terenkripsi: boolean }[];
+  enkripsi_otomatis: boolean; salinan_luar: boolean;
+  uji_terakhir: { waktu: string; oleh: string; sumber: string } | null;
+};
+
+/** Popup meminta kata sandi cadangan (dua kali saat mengunci, sekali saat membuka). */
+function JendelaSandiCadangan({ buka, tutup, judul, kunci, setuju, memuat }: {
+  buka: boolean; tutup: () => void; judul: string; kunci: boolean; setuju: (sandi: string) => void; memuat?: boolean;
+}) {
+  const [a, setA] = useState(''); const [b, setB] = useState(''); const [paham, setPaham] = useState(false);
+  useEffect(() => { if (buka) { setA(''); setB(''); setPaham(false); } }, [buka]);
+  const siap = kunci ? a.length >= 8 && a === b && paham : a.length > 0;
+  return (
+    <Jendela buka={buka} tutup={tutup} judul={judul}
+      kaki={<><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol disabled={!siap} memuat={memuat} onClick={() => setuju(a)}>{kunci ? 'Kunci & unduh' : 'Lanjutkan'}</Tombol></>}>
+      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (siap) setuju(a); }}>
+        {kunci && <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">File cadangan akan <b>dikunci</b> dengan kata sandi ini. Tanpa kata sandi yang benar, file <b>tidak bisa dibuka siapa pun — termasuk Anda</b>. Catat dan simpan kata sandinya di tempat aman (terpisah dari file).</p>}
+        <Kolom label="Kata sandi cadangan" petunjuk={kunci ? 'Minimal 8 karakter' : undefined}><Masukan autoFocus type="password" autoComplete="new-password" value={a} onChange={(e) => setA(e.target.value)} /></Kolom>
+        {kunci && <Kolom label="Ulangi kata sandi" galat={b && a !== b ? 'Belum sama' : undefined}><Masukan type="password" autoComplete="new-password" value={b} onChange={(e) => setB(e.target.value)} /></Kolom>}
+        {kunci && <div className="rounded-xl border border-stone-200 p-3"><Kotak aktif={paham} ubah={setPaham} label={<span className="text-sm">Saya sudah mencatat kata sandi ini.</span>} /></div>}
+      </form>
+    </Jendela>
+  );
+}
+
 function TabCadangan() {
-  const { data } = useQuery({ queryKey: ['cadangan'], queryFn: () => api.get<{ nama: string; ukuran: number; waktu: string }[]>('/cadangan') });
+  const { data } = useQuery({ queryKey: ['cadangan'], queryFn: () => api.get<InfoCadangan>('/cadangan') });
   const [file, setFile] = useState<File | null>(null);
+  const [sandiFile, setSandiFile] = useState('');
+  const [minta, setMinta] = useState<null | { judul: string; kunci: boolean; jalankan: (sandi: string) => Promise<void> }>(null);
+  const [memuat, setMemuat] = useState(false);
   const { beritahu, konfirmasi } = useUmpan();
+  const fileTerkunci = !!file?.name.endsWith('.seemitra-backup');
+  const jalankan = async (sandi: string) => {
+    if (!minta) return;
+    setMemuat(true);
+    try { await minta.jalankan(sandi); setMinta(null); } catch (e) { beritahu('galat', (e as Error).message); } finally { setMemuat(false); }
+  };
+  const kirimCadangan = (url: string, sumber: { file?: File; nama?: string }, sandi?: string) => {
+    const fd = new FormData();
+    if (sumber.file) fd.append('file', sumber.file);
+    if (sumber.nama) fd.append('nama', sumber.nama);
+    if (sandi) fd.append('sandi', sandi);
+    return fetch('/api' + url, { method: 'POST', body: fd, credentials: 'same-origin' }).then(async (r) => {
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.pesan ?? 'Gagal');
+      return j;
+    });
+  };
   const pulihkan = async (sumber: { file?: File; nama?: string }) => {
-    if (!(await konfirmasi({ judul: 'Pulihkan data dari cadangan?', pesan: 'Seluruh data saat ini akan diganti dengan isi cadangan. Data saat ini otomatis dicadangkan dulu, jadi tetap aman.', tombol: 'Pulihkan', bahaya: true }))) return;
+    if (!(await konfirmasi({ judul: 'Pulihkan data dari cadangan?', pesan: 'Data mitra, kegiatan, honor, dan pengaturan akan diganti dengan isi cadangan. Akun pengguna dan riwayat aktivitas tidak berubah. Data saat ini otomatis dicadangkan dulu.', tombol: 'Pulihkan', bahaya: true }))) return;
     try {
-      if (sumber.file) await kirimFile('/cadangan/pulihkan', sumber.file);
-      else { const fd = new FormData(); fd.append('nama', sumber.nama!); await fetch('/api/cadangan/pulihkan', { method: 'POST', body: fd }).then(async (r) => { if (!r.ok) throw new Error((await r.json()).pesan); }); }
+      await kirimCadangan('/cadangan/pulihkan', sumber, sumber.file ? sandiFile : undefined);
       beritahu('sukses', 'Data berhasil dipulihkan.');
-      setFile(null);
+      setFile(null); setSandiFile('');
       await queryClient.invalidateQueries();
+    } catch (e) { beritahu('galat', (e as Error).message); }
+  };
+  const uji = async (sumber: { file?: File; nama?: string }) => {
+    try {
+      const r = await kirimCadangan('/cadangan/uji', sumber, sumber.file ? sandiFile : undefined) as { jumlah: Record<string, number> };
+      beritahu('sukses', <>Cadangan bisa dibuka dengan baik: <b>{r.jumlah.mitra}</b> mitra, <b>{r.jumlah.kegiatan}</b> kegiatan, <b>{r.jumlah.penugasan}</b> penugasan. Data tidak diubah.</>);
+      segarkan();
     } catch (e) { beritahu('galat', (e as Error).message); }
   };
   return (
     <div className="space-y-5">
-      <Panel judul="Cadangan data" ket="Aplikasi membuat cadangan otomatis setiap hari (30 hari terakhir disimpan). Unduh cadangan secara berkala dan simpan di Google Drive/flashdisk untuk keamanan ekstra.">
+      <Panel judul="Cadangan data" ket="Aplikasi membuat cadangan otomatis setiap hari (30 hari terakhir disimpan). Unduh cadangan secara berkala dan simpan di Google Drive kantor (folder dengan akses terbatas).">
+        <div className="mb-4 flex flex-wrap gap-2 text-xs">
+          <Lencana warna={data?.enkripsi_otomatis ? 'hijau' : 'kuning'} titik>{data?.enkripsi_otomatis ? 'Cadangan otomatis terenkripsi' : 'Cadangan otomatis belum terenkripsi (BACKUP_KEY)'}</Lencana>
+          <Lencana warna={data?.salinan_luar ? 'hijau' : 'abu'} titik>{data?.salinan_luar ? 'Salinan harian dikirim ke penyimpanan luar' : 'Tanpa salinan ke penyimpanan luar'}</Lencana>
+          <Lencana warna={data?.uji_terakhir ? 'hijau' : 'kuning'} titik>{data?.uji_terakhir ? `Uji pemulihan terakhir: ${tanggal(data.uji_terakhir.waktu.slice(0, 10))}` : 'Belum pernah uji pemulihan'}</Lencana>
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl bg-brand-50/60 p-5">
             <h3 className="font-bold text-stone-800">Unduh cadangan sekarang</h3>
-            <p className="mb-4 mt-1 text-sm text-stone-500">Satu file berisi seluruh data: mitra, kegiatan, honor, pengguna, pengaturan, dan template.</p>
-            <Tombol ikon={<Download className="size-4" />} onClick={() => unduhFile('/cadangan/unduh').catch((e) => beritahu('galat', e.message))}>Unduh cadangan</Tombol>
+            <p className="mb-4 mt-1 text-sm text-stone-500">Satu file terkunci kata sandi berisi mitra, kegiatan, honor, pengaturan, dan template. Kata sandi akun pengguna tidak ikut.</p>
+            <Tombol ikon={<Download className="size-4" />} onClick={() => setMinta({ judul: 'Kunci file cadangan', kunci: true, jalankan: async (sandi) => { await unduhFile('/cadangan/unduh', { sandi }); } })}>Unduh cadangan</Tombol>
           </div>
           <div className="rounded-2xl bg-stone-50 p-5">
-            <h3 className="font-bold text-stone-800">Pulihkan dari file</h3>
-            <div className="my-3"><AreaUnggah terima=".json" file={file} pilih={setFile} teks="Pilih file cadangan (.json)" /></div>
-            <Tombol varian="bahaya" disabled={!file} onClick={() => file && pulihkan({ file })}>Pulihkan</Tombol>
+            <h3 className="font-bold text-stone-800">Pulihkan / uji dari file</h3>
+            <div className="my-3"><AreaUnggah terima=".seemitra-backup,.json" file={file} pilih={setFile} teks="Pilih file cadangan (.seemitra-backup)" /></div>
+            {fileTerkunci && <Kolom label="Kata sandi cadangan" className="mb-3"><Masukan type="password" value={sandiFile} onChange={(e) => setSandiFile(e.target.value)} /></Kolom>}
+            <div className="flex flex-wrap gap-2">
+              <Tombol varian="kedua" disabled={!file || (fileTerkunci && !sandiFile)} onClick={() => file && uji({ file })}>Uji saja</Tombol>
+              <Tombol varian="bahaya" disabled={!file || (fileTerkunci && !sandiFile)} onClick={() => file && pulihkan({ file })}>Pulihkan</Tombol>
+            </div>
           </div>
         </div>
       </Panel>
-      <Panel judul="Cadangan otomatis di server">
-        {!data?.length ? <p className="text-sm text-stone-400">Belum ada.</p> : (
+      <Panel judul="Cadangan otomatis di server" ket={<><b>Uji</b> = membuka & memeriksa cadangan tanpa mengubah data (latihan pemulihan, disarankan setiap 3 bulan). <b>Unduh</b> meminta kata sandi baru untuk mengunci file.</>}>
+        {!data?.daftar.length ? <p className="text-sm text-stone-400">Belum ada.</p> : (
           <ul className="divide-y divide-stone-100">
-            {data.map((c) => (
+            {data.daftar.map((c) => (
               <li key={c.nama} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
-                <span className="flex-1 font-mono text-xs text-stone-600">{c.nama}</span>
+                <span className="min-w-0 flex-1 break-all font-mono text-xs text-stone-600">{c.terenkripsi && <KeyRound className="mr-1 inline size-3 text-brand-600" />}{c.nama}</span>
                 <span className="text-xs text-stone-400">{(c.ukuran / 1024).toFixed(0)} KB</span>
-                <Tombol kecil varian="hantu" ikon={<Download className="size-3.5" />} onClick={() => unduhFile(`/cadangan/file/${encodeURIComponent(c.nama)}`).catch((e) => beritahu('galat', e.message))}>Unduh</Tombol>
+                <Tombol kecil varian="hantu" ikon={<ShieldCheck className="size-3.5" />} onClick={() => uji({ nama: c.nama })}>Uji</Tombol>
+                <Tombol kecil varian="hantu" ikon={<Download className="size-3.5" />} onClick={() => setMinta({ judul: 'Kunci file cadangan', kunci: true, jalankan: async (sandi) => { await unduhFile(`/cadangan/file/${encodeURIComponent(c.nama)}`, { sandi }); } })}>Unduh</Tombol>
                 <Tombol kecil varian="hantu" ikon={<RotateCcw className="size-3.5" />} onClick={() => pulihkan({ nama: c.nama })}>Pulihkan</Tombol>
               </li>
             ))}
           </ul>
         )}
       </Panel>
+      <JendelaSandiCadangan buka={!!minta} tutup={() => setMinta(null)} judul={minta?.judul ?? ''} kunci={!!minta?.kunci} memuat={memuat} setuju={jalankan} />
     </div>
   );
 }
 
-/** Reset seluruh data mitra dan/atau kegiatan — dengan persetujuan berlapis & cadangan otomatis */
 function TabReset() {
   const { data: ringkas } = useQuery({ queryKey: ['reset-ringkasan'], queryFn: () => api.get<{ mitra: number; kegiatan: number; penugasan: number; sbml: number }>('/reset/ringkasan') });
   const [pilih, setPilih] = useState({ mitra: false, kegiatan: false, sbml: false });
@@ -614,6 +689,7 @@ function TabRiwayat() {
 }
 
 function TabAkun() {
+  const admin = useSaya().data?.pengguna?.peran === 'admin';
   const [lama, setLama] = useState('');
   const [sandi, setSandi] = useState('');
   const [ulang, setUlang] = useState('');
@@ -625,9 +701,126 @@ function TabAkun() {
     <Panel judul="Ganti kata sandi" kaki={<Tombol disabled={!lama || !sandi || sandi !== ulang} memuat={ganti.isPending} onClick={() => ganti.mutate(undefined)}>Simpan</Tombol>}>
       <div className="grid max-w-md gap-4">
         <Kolom label="Kata sandi saat ini" petunjuk="Untuk memastikan yang mengganti adalah pemilik akun"><Masukan type="password" autoComplete="current-password" value={lama} onChange={(e) => setLama(e.target.value)} /></Kolom>
-        <Kolom label="Kata sandi baru" petunjuk="Minimal 6 karakter"><Masukan type="password" autoComplete="new-password" value={sandi} onChange={(e) => setSandi(e.target.value)} /></Kolom>
+        <Kolom label="Kata sandi baru" petunjuk={`Minimal ${admin ? 10 : 6} karakter dan bukan kata umum. Contoh mudah diingat: kopi-pagi-gunungtua`}><Masukan type="password" autoComplete="new-password" value={sandi} onChange={(e) => setSandi(e.target.value)} /></Kolom>
         <Kolom label="Ulangi kata sandi" galat={ulang && sandi !== ulang ? 'Kata sandi belum sama' : undefined}><Masukan type="password" value={ulang} onChange={(e) => setUlang(e.target.value)} /></Kolom>
       </div>
     </Panel>
+  );
+}
+
+/* ---------------------------- Sesi & keamanan ---------------------------- */
+type Sesi = { id: string; nama?: string; username?: string; perangkat: string; ip: string | null; masuk: string; terakhir_aktif: string; ini: boolean };
+const jamTanggal = (iso: string) => new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+function DaftarSesi({ data, cabut, tampilNama }: { data?: Sesi[]; cabut: (s: Sesi) => void; tampilNama?: boolean }) {
+  if (!data) return <Memuat />;
+  if (!data.length) return <p className="text-sm text-stone-400">Tidak ada sesi aktif.</p>;
+  return (
+    <ul className="divide-y divide-stone-100">
+      {data.map((s) => (
+        <li key={s.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
+          <ShieldCheck className={cx('size-4', s.ini ? 'text-brand-600' : 'text-stone-300')} />
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-stone-800">{tampilNama && <>{s.nama} · </>}{s.perangkat} {s.ini && <Lencana warna="brand">perangkat ini</Lencana>}</div>
+            <div className="text-xs text-stone-400">masuk {jamTanggal(s.masuk)} · aktif {jamTanggal(s.terakhir_aktif)}{s.ip ? ` · IP ${s.ip}` : ''}</div>
+          </div>
+          {!s.ini && <Tombol kecil varian="hantu" onClick={() => cabut(s)}>Keluarkan</Tombol>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PanelSesiSaya() {
+  const { data } = useQuery({ queryKey: ['sesi-saya'], queryFn: () => api.get<Sesi[]>('/akun/sesi') });
+  const cabut = useAksi((s: Sesi) => api.del(`/akun/sesi/${s.id}`), { sukses: 'Perangkat dikeluarkan.' });
+  const semua = useAksi(() => api.post('/akun/sesi/keluar-lain'), { sukses: 'Semua perangkat lain sudah dikeluarkan.' });
+  const lain = (data ?? []).filter((s) => !s.ini).length;
+  return (
+    <Panel judul="Perangkat yang sedang masuk" ket="Sesi otomatis berakhir setelah 2 jam tidak dipakai, atau 12 jam sejak masuk. Bila ada perangkat yang tidak Anda kenal, keluarkan lalu ganti kata sandi."
+      kaki={lain > 0 && <Tombol varian="kedua" memuat={semua.isPending} onClick={() => semua.mutate(undefined)}>Keluar dari {lain} perangkat lain</Tombol>}>
+      <DaftarSesi data={data} cabut={(s) => cabut.mutate(s)} />
+    </Panel>
+  );
+}
+
+function Panel2Langkah() {
+  const saya = useSaya().data?.pengguna;
+  const [siapkan, setSiapkan] = useState<{ rahasia: string; qr: string } | null>(null);
+  const [kode, setKode] = useState('');
+  const [sandi, setSandi] = useState('');
+  const [matikan, setMatikan] = useState(false);
+  const mulai = useAksi(() => api.post<{ rahasia: string; qr: string }>('/akun/2fa/mulai'), { setelah: (r) => { setSiapkan(r); setKode(''); } });
+  const aktifkan = useAksi(() => api.post('/akun/2fa/aktifkan', { kode }), { sukses: 'Verifikasi 2 langkah aktif. Mulai sekarang, setelah kata sandi Anda akan diminta kode dari HP.', setelah: () => { setSiapkan(null); queryClient.invalidateQueries({ queryKey: ['saya'] }); } });
+  const nonaktif = useAksi(() => api.post('/akun/2fa/matikan', { sandi }), { sukses: 'Verifikasi 2 langkah dimatikan.', setelah: () => { setMatikan(false); setSandi(''); queryClient.invalidateQueries({ queryKey: ['saya'] }); } });
+  const aktif = !!saya?.totp_aktif;
+  return (
+    <Panel judul="Verifikasi 2 langkah" ket={<>Lapisan pengaman tambahan: selain kata sandi, saat masuk diminta 6 angka dari aplikasi <b>Google Authenticator</b> atau <b>Microsoft Authenticator</b> di HP. {saya?.peran === 'admin' && <b>Sangat disarankan untuk admin.</b>}</>}
+      kaki={aktif
+        ? <Tombol varian="kedua" onClick={() => setMatikan(true)}>Matikan</Tombol>
+        : !siapkan && <Tombol ikon={<ShieldCheck className="size-4" />} memuat={mulai.isPending} onClick={() => mulai.mutate(undefined)}>Aktifkan</Tombol>}>
+      {aktif ? <p className="flex items-center gap-2 text-sm font-semibold text-emerald-700"><Check className="size-4" /> Aktif — akun Anda terlindungi kode dari HP.</p>
+        : siapkan ? (
+          <div className="grid items-start gap-5 sm:grid-cols-[auto_1fr]">
+            <img src={siapkan.qr} alt="Kode QR verifikasi 2 langkah" className="size-48 rounded-xl border border-stone-200 bg-white p-1" />
+            <ol className="space-y-3 text-sm text-stone-600">
+              <li>1. Pasang <b>Google Authenticator</b> atau <b>Microsoft Authenticator</b> dari Play Store / App Store.</li>
+              <li>2. Di aplikasi itu, pilih <b>Tambah</b> → <b>Pindai kode QR</b>, arahkan kamera ke kode di samping.<br /><span className="text-xs text-stone-400">Tidak bisa memindai? Ketik kode ini: <span className="break-all font-mono">{siapkan.rahasia}</span></span></li>
+              <li>3. Ketik 6 angka yang muncul di aplikasi:
+                <div className="mt-2 flex gap-2">
+                  <Masukan inputMode="numeric" maxLength={6} value={kode} onChange={(e) => setKode(e.target.value.replace(/[^\d]/g, ''))} className="w-40 text-center font-mono text-lg tracking-widest" placeholder="000000" />
+                  <Tombol disabled={kode.length !== 6} memuat={aktifkan.isPending} onClick={() => aktifkan.mutate(undefined)}>Aktifkan</Tombol>
+                </div>
+              </li>
+            </ol>
+          </div>
+        ) : <p className="text-sm text-stone-500">Belum aktif.</p>}
+      <Jendela buka={matikan} tutup={() => setMatikan(false)} judul="Matikan verifikasi 2 langkah?"
+        kaki={<><Tombol varian="kedua" onClick={() => setMatikan(false)}>Batal</Tombol><Tombol varian="bahaya" disabled={!sandi} memuat={nonaktif.isPending} onClick={() => nonaktif.mutate(undefined)}>Matikan</Tombol></>}>
+        <Kolom label="Kata sandi Anda" petunjuk="Untuk memastikan yang mematikan adalah pemilik akun."><Masukan type="password" autoFocus value={sandi} onChange={(e) => setSandi(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && sandi) nonaktif.mutate(undefined); }} /></Kolom>
+      </Jendela>
+    </Panel>
+  );
+}
+
+type LogMasuk = { id: number; waktu: string; username: string; ip: string | null; user_agent: string | null; hasil: string };
+function TabKeamanan() {
+  const { data: sesi } = useQuery({ queryKey: ['sesi-semua'], queryFn: () => api.get<Sesi[]>('/keamanan/sesi') });
+  const { data: log } = useQuery({ queryKey: ['log-masuk'], queryFn: () => api.get<LogMasuk[]>('/keamanan/log-masuk') });
+  const { konfirmasi, beritahu } = useUmpan();
+  const cabut = useAksi((s: Sesi) => api.del(`/keamanan/sesi/${s.id}`), { sukses: (_, s) => `${s.nama} dikeluarkan dari ${s.perangkat}.` });
+  const [hasil, setHasil] = useState<{ utuh: boolean; pesan: string } | null>(null);
+  const periksa = useAksi(() => api.get<{ utuh: boolean; pesan: string }>('/riwayat/verifikasi'), { setelah: (r) => { setHasil(r); if (!r.utuh) beritahu('galat', r.pesan); } });
+  const gagal1jam = (log ?? []).filter((l) => !/^berhasil|^sandi benar/.test(l.hasil) && Date.now() - new Date(l.waktu.replace(' ', 'T')).getTime() < 3600e3).length;
+  return (
+    <div className="space-y-5">
+      <Panel judul="Sesi aktif semua pengguna" ket="Siapa saja yang sedang masuk dan dari perangkat apa. Keluarkan sesi yang mencurigakan.">
+        <DaftarSesi data={sesi} tampilNama cabut={async (s) => (await konfirmasi({ judul: `Keluarkan ${s.nama}?`, pesan: `Sesi di ${s.perangkat} langsung berakhir.`, tombol: 'Keluarkan', bahaya: true })) && cabut.mutate(s)} />
+      </Panel>
+      <Panel judul="Catatan masuk" ket={<>200 percobaan masuk terakhir (disimpan 90 hari). {gagal1jam > 0 && <b className="text-rose-700">{gagal1jam} gagal dalam 1 jam terakhir.</b>}</>}>
+        {!log ? <Memuat /> : !log.length ? <p className="text-sm text-stone-400">Belum ada.</p> : (
+          <div className="scroll-tipis max-h-96 overflow-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-white text-xs uppercase text-stone-400"><tr><th className="py-2 pr-3">Waktu</th><th className="pr-3">Username</th><th className="pr-3">Hasil</th><th>IP</th></tr></thead>
+              <tbody className="divide-y divide-stone-100">
+                {log.map((l) => (
+                  <tr key={l.id}>
+                    <td className="whitespace-nowrap py-1.5 pr-3 text-xs text-stone-500">{l.waktu}</td>
+                    <td className="pr-3 font-medium text-stone-700">{l.username}</td>
+                    <td className="pr-3"><Lencana warna={l.hasil.startsWith('berhasil') ? 'hijau' : l.hasil.startsWith('sandi benar') ? 'abu' : 'merah'}>{l.hasil}</Lencana></td>
+                    <td className="font-mono text-xs text-stone-500">{l.ip}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+      <Panel judul="Keutuhan riwayat aktivitas" ket="Setiap baris riwayat terkunci berantai. Bila ada yang mengubah atau menghapus riwayat langsung di database, pemeriksaan ini akan mendeteksinya."
+        kaki={<Tombol varian="kedua" ikon={<ShieldCheck className="size-4" />} memuat={periksa.isPending} onClick={() => periksa.mutate(undefined)}>Periksa sekarang</Tombol>}>
+        {hasil ? <p className={cx('flex items-center gap-2 text-sm font-semibold', hasil.utuh ? 'text-emerald-700' : 'text-rose-700')}>{hasil.utuh ? <Check className="size-4" /> : <AlertOctagon className="size-4" />}{hasil.pesan}</p>
+          : <p className="text-sm text-stone-500">Belum diperiksa.</p>}
+      </Panel>
+    </div>
   );
 }

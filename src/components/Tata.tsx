@@ -159,6 +159,9 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
         <div className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-10 lg:pt-10">
           {/* Transisi halaman memakai animasi CSS (lihat .masuk-halaman di index.css):
               selalu selesai walau pengguna berpindah halaman dengan cepat. */}
+          {pengguna.peran === 'pengamat' && (
+            <div className="mb-5 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-800">Anda masuk sebagai <b>pengamat</b>: bisa melihat data, tetapi tidak bisa mengubah, mengekspor, atau melihat NIK/rekening lengkap.</div>
+          )}
           <div key={lokasi.pathname} className="masuk-halaman">{children}</div>
         </div>
       </main>
