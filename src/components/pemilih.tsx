@@ -317,15 +317,19 @@ export function IsianSaran({ nilai, ubah, saran, placeholder, className }: {
 }) {
   const [buka, setBuka] = useState(false);
   const [sorot, setSorot] = useState(-1);
+  /** true hanya saat pengguna sedang mengetik; saat dibuka lewat tombol/fokus semua saran ditampilkan */
+  const [mengetik, setMengetik] = useState(false);
   const wadah = useRef<HTMLDivElement>(null);
-  const cocok = saran.filter((s) => s.toLowerCase().includes(nilai.trim().toLowerCase()) && s !== nilai).slice(0, 8);
+  const kata = nilai.trim().toLowerCase();
+  const cocok = mengetik && kata ? saran.filter((s) => s.toLowerCase().includes(kata)) : saran;
   const tampil = buka && cocok.length > 0;
-  const pilih = (s: string) => { ubah(s); setBuka(false); };
+  const bukaSemua = () => { setMengetik(false); setSorot(Math.max(0, saran.indexOf(nilai))); setBuka(true); };
+  const pilih = (s: string) => { ubah(s); setBuka(false); setMengetik(false); };
   return (
     <div ref={wadah} className={cx('relative', className)}>
       <input className="input pr-9" value={nilai} placeholder={placeholder}
-        onChange={(e) => { ubah(e.target.value); setBuka(true); setSorot(-1); }}
-        onFocus={() => setBuka(true)}
+        onChange={(e) => { ubah(e.target.value); setMengetik(true); setBuka(true); setSorot(-1); }}
+        onFocus={bukaSemua}
         onBlur={() => setTimeout(() => setBuka(false), 120)}
         onKeyDown={(e) => {
           if (!tampil) return;
@@ -334,16 +338,18 @@ export function IsianSaran({ nilai, ubah, saran, placeholder, className }: {
           if (e.key === 'Enter' && sorot >= 0) { e.preventDefault(); pilih(cocok[sorot]); }
         }} />
       {saran.length > 0 && (
-        <button type="button" tabIndex={-1} onClick={() => setBuka(!buka)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-stone-400 hover:bg-stone-100">
+        <button type="button" tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => (tampil ? setBuka(false) : bukaSemua())} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-stone-400 hover:bg-stone-100">
           <ChevronDown className="size-4" />
         </button>
       )}
       <Mengambang buka={tampil} tutup={() => setBuka(false)} jangkar={wadah} tinggi={260}>
         <div className="scroll-tipis max-h-56 overflow-y-auto p-1.5">
-          <p className="px-3 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-stone-400">Saran</p>
+          <p className="px-3 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-stone-400">Pilihan</p>
           {cocok.map((s, i) => (
             <button key={s} type="button" onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setSorot(i)} onClick={() => pilih(s)}
-              className={cx('flex w-full rounded-xl px-3 py-2 text-left text-sm text-stone-700', i === sorot && 'bg-stone-100')}>{s}</button>
+              className={cx('flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm text-stone-700', i === sorot && 'bg-stone-100', s === nilai && 'font-semibold text-emerald-700')}>
+              {s}{s === nilai && <Check className="size-4 shrink-0" />}
+            </button>
           ))}
         </div>
       </Mengambang>
