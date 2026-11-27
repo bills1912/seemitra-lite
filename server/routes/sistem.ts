@@ -2,8 +2,8 @@
 import { Hono } from 'hono';
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, ambilPengaturan, simpanPengaturan, catat, transaksi, isiCadangan, pulihkanCadangan, BACKUP_DIR, TEMPLATE_DIR, PENGATURAN_AWAL } from '../db.ts';
-import { wajibAdmin, hashSandi, type Env } from '../auth.ts';
+import { db, ambilPengaturan, simpanPengaturan, catat, transaksi, isiCadangan, pulihkanCadangan, GagalCadangan, BACKUP_DIR, TEMPLATE_DIR, PENGATURAN_AWAL } from '../db.ts';
+import { wajibAdmin, hashSandi, cocokSandi, cabutSemuaSesi, buatSesi, type Env } from '../auth.ts';
 import { GagalError } from '../util.ts';
 import { unduh } from './data.ts';
 import { fileTemplate, fileTemplateBawaan, JENIS_TEMPLATE, PENANDA, ujiTemplate, type JenisTemplate } from './dokumen.ts';
@@ -68,15 +68,19 @@ sistem.delete('/sbml/:tahun', wajibAdmin, (c) => {
 sistem.get('/pengguna', wajibAdmin, (c) => c.json(db.prepare('SELECT id, username, nama, peran, status, dibuat FROM pengguna ORDER BY status DESC, nama').all()));
 sistem.post('/pengguna', wajibAdmin, async (c) => {
   const b = await c.req.json();
-  if (!b.username || !b.nama || !b.sandi) throw new GagalError('Nama, username, dan kata sandi wajib diisi.');
-  if (String(b.sandi).length < 6) throw new GagalError('Kata sandi minimal 6 karakter.');
+  const nama = teks(b.nama), username = teks(b.username), sandi = typeof b.sandi === 'string' ? b.sandi : '';
+  if (!username || !nama || !sandi) throw new GagalError('Nama, username, dan kata sandi wajib diisi.');
+  if (nama.length > 100) throw new GagalError('Nama maksimal 100 karakter.');
+  if (!/^[A-Za-z0-9._-]{3,30}$/.test(username)) throw new GagalError('Username 3–30 karakter, hanya huruf, angka, titik, garis bawah, atau strip.');
+  cekPanjangSandi(sandi);
+  const hash = await hashSandi(sandi);
   try {
     db.prepare('INSERT INTO pengguna (username, nama, password_hash, peran) VALUES (?, ?, ?, ?)').run(
-      String(b.username).trim(), String(b.nama).trim(), hashSandi(b.sandi), b.peran === 'admin' ? 'admin' : 'operator');
+      username, nama, hash, b.peran === 'admin' ? 'admin' : 'operator');
   } catch {
     throw new GagalError('Username sudah dipakai.');
   }
-  catat(c.get('pengguna').nama, 'Tambah pengguna', b.username);
+  catat(c.get('pengguna').nama, 'Tambah pengguna', username);
   return c.json({ ok: true });
 });
 sistem.put('/pengguna/:id', wajibAdmin, async (c) => {
@@ -89,12 +93,20 @@ sistem.put('/pengguna/:id', wajibAdmin, async (c) => {
   }
   const status = b.status === 'menunggu' ? 'menunggu' : 'aktif';
   if (id === c.get('pengguna').id && (status !== 'aktif' || peran !== 'admin')) throw new GagalError('Anda tidak dapat menonaktifkan atau menurunkan akun sendiri.');
-  db.prepare('UPDATE pengguna SET nama = ?, peran = ?, status = ? WHERE id = ?').run(String(b.nama).trim(), peran, status, id);
-  if (b.sandi) {
-    if (String(b.sandi).length < 6) throw new GagalError('Kata sandi minimal 6 karakter.');
-    db.prepare('UPDATE pengguna SET password_hash = ? WHERE id = ?').run(hashSandi(b.sandi), id);
-  }
-  catat(c.get('pengguna').nama, 'Ubah pengguna', b.nama);
+  const nama = teks(b.nama);
+  if (!nama || nama.length > 100) throw new GagalError('Nama wajib diisi (maksimal 100 karakter).');
+  const lama = db.prepare('SELECT peran, status FROM pengguna WHERE id = ?').get(id) as { peran: string; status: string } | undefined;
+  if (!lama) throw new GagalError('Pengguna tidak ditemukan.', 404);
+  const sandi = typeof b.sandi === 'string' ? b.sandi : '';
+  if (sandi) cekPanjangSandi(sandi);
+  const hash = sandi ? await hashSandi(sandi) : null;
+  transaksi(() => {
+    db.prepare('UPDATE pengguna SET nama = ?, peran = ?, status = ? WHERE id = ?').run(nama, peran, status, id);
+    if (hash) db.prepare('UPDATE pengguna SET password_hash = ? WHERE id = ?').run(hash, id);
+    // sandi direset / peran diturunkan / dinonaktifkan → pengguna itu keluar dari semua perangkat
+    if (hash || (lama.peran === 'admin' && peran !== 'admin') || status !== 'aktif') cabutSemuaSesi(id);
+  });
+  catat(c.get('pengguna').nama, 'Ubah pengguna', `${nama}${hash ? ' (kata sandi direset)' : ''}${lama.peran !== peran ? ` (peran: ${lama.peran} → ${peran})` : ''}`);
   return c.json({ ok: true });
 });
 sistem.delete('/pengguna/:id', wajibAdmin, (c) => {
@@ -115,11 +127,27 @@ sistem.post('/pengguna/:id/setujui', wajibAdmin, (c) => {
 });
 /** Setiap pengguna boleh mengganti kata sandinya sendiri */
 sistem.post('/ganti-sandi', async (c) => {
-  const { sandi } = await c.req.json();
-  if (!sandi || String(sandi).length < 6) throw new GagalError('Kata sandi minimal 6 karakter.');
-  db.prepare('UPDATE pengguna SET password_hash = ? WHERE id = ?').run(hashSandi(sandi), c.get('pengguna').id);
+  const { sandi, sandi_lama } = await c.req.json();
+  const saya = c.get('pengguna');
+  if (typeof sandi_lama !== 'string' || !sandi_lama) throw new GagalError('Isi kata sandi saat ini.');
+  if (typeof sandi !== 'string') throw new GagalError('Isi kata sandi baru.');
+  cekPanjangSandi(sandi);
+  const u = db.prepare('SELECT password_hash FROM pengguna WHERE id = ?').get(saya.id) as { password_hash: string };
+  if (!(await cocokSandi(sandi_lama, u.password_hash))) throw new GagalError('Kata sandi saat ini salah.');
+  const hash = await hashSandi(sandi);
+  transaksi(() => {
+    db.prepare('UPDATE pengguna SET password_hash = ? WHERE id = ?').run(hash, saya.id);
+    cabutSemuaSesi(saya.id); // perangkat lain otomatis keluar
+  });
+  buatSesi(c, saya.id); // perangkat yang sedang dipakai tetap masuk
+  catat(saya.nama, 'Ganti kata sandi');
   return c.json({ ok: true });
 });
+
+function teks(v: unknown) { return typeof v === 'string' ? v.trim() : ''; }
+function cekPanjangSandi(sandi: string) {
+  if (sandi.length < 6 || sandi.length > 128) throw new GagalError('Kata sandi 6–128 karakter.');
+}
 
 /* ---------- Template dokumen ---------- */
 const jenisValid = (j: string): JenisTemplate => {
@@ -188,15 +216,27 @@ sistem.post('/cadangan/pulihkan', wajibAdmin, async (c) => {
   const body = await c.req.parseBody();
   const file = body.file as File | undefined;
   let data: unknown;
-  if (file && typeof file !== 'string') data = JSON.parse(await file.text());
-  else if (typeof body.nama === 'string') data = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, path.basename(body.nama)), 'utf8'));
-  else throw new GagalError('Pilih file cadangan (.json).');
+  try {
+    if (file && typeof file !== 'string') data = JSON.parse(await file.text());
+    else if (typeof body.nama === 'string') data = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, path.basename(body.nama)), 'utf8'));
+    else throw new GagalError('Pilih file cadangan (.json).');
+  } catch (e) {
+    if (e instanceof GagalError) throw e;
+    throw new GagalError('File cadangan tidak bisa dibaca. Pastikan file .json dari Seemitra Lite.');
+  }
+  const versiTertinggi = (db.prepare('SELECT COALESCE(MAX(versi_sesi), 0) v FROM pengguna').get() as { v: number }).v;
   try {
     pulihkanCadangan(data as ReturnType<typeof isiCadangan>);
   } catch (e) {
-    throw new GagalError((e as Error).message);
+    if (e instanceof GagalCadangan) throw new GagalError(e.message);
+    console.error('[cadangan] pemulihan gagal:', e);
+    throw new GagalError('Pemulihan gagal; data tidak diubah. Periksa kembali file cadangan.');
   }
-  catat(c.get('pengguna').nama, 'Pulihkan cadangan');
+  // semua sesi lama dibatalkan (versi sesi dari file cadangan bisa lebih rendah); admin yang memulihkan tetap masuk
+  db.prepare('UPDATE pengguna SET versi_sesi = versi_sesi + ? + 1').run(versiTertinggi);
+  const saya = c.get('pengguna');
+  if (db.prepare("SELECT 1 FROM pengguna WHERE id = ? AND status = 'aktif'").get(saya.id)) buatSesi(c, saya.id);
+  catat(saya.nama, 'Pulihkan cadangan');
   return c.json({ ok: true });
 });
 

@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeft, Eye, EyeOff, Hourglass, LogIn, Sparkles, UserPlus } from 'lucide-react';
 import { api, queryClient } from '../lib/api';
 import { Kolom, Masukan, Tombol, cx } from '../components/ui';
+import { Turnstile, type PeganganTurnstile } from '../components/Turnstile';
+import { useSaya } from '../lib/hooks';
 
 type Mode = 'masuk' | 'daftar' | 'terkirim';
 
@@ -14,7 +16,13 @@ type Mode = 'masuk' | 'daftar' | 'terkirim';
  */
 export function Masuk({ setup }: { setup: boolean }) {
   const [mode, setMode] = useState<Mode>('masuk');
-  const [f, setF] = useState({ nama: '', username: '', sandi: '', ulang: '' });
+  const [f, setF] = useState({ nama: '', username: '', sandi: '', ulang: '', kode: '' });
+  // pemeriksaan keamanan (Turnstile) — hanya aktif bila diatur di server
+  const saya = useSaya().data;
+  const kunciSitus = saya?.turnstile ?? null;
+  const perluKode = Boolean(saya?.perluKodeSetup);
+  const [token, setToken] = useState('');
+  const captcha = useRef<PeganganTurnstile>(null);
   const [lihat, setLihat] = useState(false);
   const [galat, setGalat] = useState('');
   const [memuat, setMemuat] = useState(false);
@@ -29,16 +37,17 @@ export function Masuk({ setup }: { setup: boolean }) {
     setMemuat(true);
     try {
       if (mode === 'masuk') {
-        await api.post('/auth/masuk', { username: f.username, sandi: f.sandi });
+        await api.post('/auth/masuk', { username: f.username, sandi: f.sandi, turnstile: token });
         await queryClient.invalidateQueries({ queryKey: ['saya'] });
       } else {
-        const r = await api.post<{ ok: boolean; masuk: boolean }>('/auth/daftar', { nama: f.nama, username: f.username, sandi: f.sandi });
+        const r = await api.post<{ ok: boolean; masuk: boolean }>('/auth/daftar', { nama: f.nama, username: f.username, sandi: f.sandi, turnstile: token, kode_setup: f.kode });
         if (r.masuk) await queryClient.invalidateQueries({ queryKey: ['saya'] });
         else ganti('terkirim');
       }
     } catch (err) {
       setGalat((err as Error).message);
       setGoyang((g) => g + 1);
+      captcha.current?.reset(); // token pemeriksaan hanya berlaku sekali
     } finally {
       setMemuat(false);
     }
@@ -102,11 +111,18 @@ export function Masuk({ setup }: { setup: boolean }) {
               </Kolom>
               {kolomSandi('sandi', 'Kata sandi', mode === 'daftar' ? 'Minimal 6 karakter' : undefined)}
               {mode === 'daftar' && kolomSandi('ulang', 'Ulangi kata sandi')}
+              {mode === 'daftar' && setup && perluKode && (
+                <Kolom label="Kode setup" wajib petunjuk="Diberikan oleh pengelola server, khusus untuk membuat akun admin pertama.">
+                  <Masukan value={f.kode} onChange={(e) => setF({ ...f, kode: e.target.value })} autoComplete="off" className="font-mono" />
+                </Kolom>
+              )}
+
+              {kunciSitus && <Turnstile ref={captcha} kunciSitus={kunciSitus} aksi={mode === 'daftar' ? 'daftar' : 'masuk'} onToken={setToken} />}
 
               {galat && <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{galat}</motion.p>}
 
-              <Tombol type="submit" memuat={memuat} ikon={mode === 'masuk' ? <LogIn className="size-4" /> : <UserPlus className="size-4" />} className="h-11 w-full text-[15px]">
-                {mode === 'masuk' ? 'Masuk' : 'Daftar'}
+              <Tombol type="submit" memuat={memuat} disabled={Boolean(kunciSitus) && !token} ikon={mode === 'masuk' ? <LogIn className="size-4" /> : <UserPlus className="size-4" />} className="h-11 w-full text-[15px]">
+                {kunciSitus && !token ? 'Tunggu pemeriksaan keamanan…' : mode === 'masuk' ? 'Masuk' : 'Daftar'}
               </Tombol>
 
               <p className={cx('pt-1 text-center text-sm text-stone-500')}>

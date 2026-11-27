@@ -11,7 +11,7 @@ import path from 'node:path';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { db, ambilPengaturan, catat, TEMPLATE_DIR, transaksi } from '../db.ts';
-import type { Env } from '../auth.ts';
+import { wajibAdmin, type Env } from '../auth.ts';
 import { rekapBulan } from './laporan.ts';
 import { unduh } from './data.ts';
 import { akhirBulan, angka, GagalError, hari, isiNomor, labelBulan, namaBulan, rupiah, tanggalPanjang, terbilang, keTanggal } from '../util.ts';
@@ -154,8 +154,9 @@ dokumen.get('/dokumen/pratinjau', (c) => {
   });
 });
 
-dokumen.post('/dokumen/reset-nomor', async (c) => {
+dokumen.post('/dokumen/reset-nomor', wajibAdmin, async (c) => {
   const { bulan } = await c.req.json();
+  if (typeof bulan !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(bulan)) throw new GagalError('Format bulan tidak valid.');
   db.prepare('DELETE FROM nomor_dokumen WHERE bulan = ?').run(bulan);
   catat(c.get('pengguna').nama, 'Atur ulang nomor dokumen', labelBulan(bulan));
   return c.json({ ok: true });

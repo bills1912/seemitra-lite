@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle2, FileCheck2, FileSignature, RotateCcw, Settings2, Users } from 'lucide-react';
 import { api, segarkan, unduhFile } from '../lib/api';
 import { useUmpan } from '../components/umpan';
+import { useSaya } from '../lib/hooks';
 import { Pilihan, PilihTanggal } from '../components/pemilih';
 import { Avatar, KepalaHalaman, Kartu, Kolom, Kosong, Kotak, KotakCari, Memuat, PemilihBulan, Tombol, cx } from '../components/ui';
 import { akhirBulan, bulanIni, cocok, labelBulan, rupiah } from '../lib/format';
@@ -19,6 +20,7 @@ type Pratinjau = {
 };
 
 export function Dokumen() {
+  const admin = useSaya().data?.pengguna?.peran === 'admin';
   const [param, setParam] = useSearchParams();
   const bulan = param.get('bulan') ?? bulanIni();
   const kegiatanAwal = param.get('kegiatan');
@@ -126,7 +128,7 @@ export function Dokumen() {
               <Link to="/pengaturan?tab=template" className="flex items-center gap-1.5 font-semibold text-brand-700 hover:underline"><Settings2 className="size-4" /> Ubah isi surat (template Word)</Link>
               <Link to="/pengaturan?tab=kantor" className="hover:underline">Ubah nama PPK / kantor</Link>
               <Link to="/pengaturan?tab=nomor" className="hover:underline">Ubah format nomor</Link>
-              <button onClick={resetNomor} className="flex items-center gap-1.5 hover:text-stone-700"><RotateCcw className="size-3.5" /> Atur ulang nomor bulan ini</button>
+              {admin && <button onClick={resetNomor} className="flex items-center gap-1.5 hover:text-stone-700"><RotateCcw className="size-3.5" /> Atur ulang nomor bulan ini</button>}
             </div>
           </div>
 

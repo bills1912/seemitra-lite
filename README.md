@@ -25,6 +25,6 @@ npm install
 npm run dev        # pengembangan: http://localhost:5173
 npm run build && npm start   # produksi: http://localhost:3000
 ```
-Variabel lingkungan (opsional): `PORT` (bawaan 3000), `DATA_DIR` (bawaan `./data`; di Railway `/data` pada volume).
+Variabel lingkungan: `PORT` (bawaan 3000), `DATA_DIR` (bawaan `./data`; di Railway `/data` pada volume), `SESSION_SECRET` (wajib di production, ≥32 karakter), `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` (CAPTCHA login/daftar), `SETUP_TOKEN` (opsional, kode untuk admin pertama). Lihat PANDUAN.md bagian 4.
 
 Deploy: Railway membaca `Dockerfile` + `railway.json`. Pasang volume di `/data`.

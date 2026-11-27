@@ -11,3 +11,9 @@ Aplikasi ini dirawat oleh orang **tanpa latar belakang IT**. Saat mengubah kode:
 - Setelah perubahan, jalankan `npm run build` (typecheck + build) sebelum commit. Railway otomatis deploy dari cabang `main`.
 
 Struktur: `server/` (API Hono + SQLite), `src/pages/` (halaman React), `src/components/ui.tsx` (komponen dasar), `templates/` (template Word bawaan).
+
+Keamanan (lihat `docs/PERBAIKAN-KEAMANAN.md`):
+- Jangan pernah mengekspor baris `pengaturan.kunci = 'rahasia'` atau rahasia lain ke file cadangan/unduhan.
+- Rute baru yang mengubah kata sandi/peran pengguna harus memanggil `cabutSemuaSesi(id)`.
+- Validasi tipe & panjang semua isian dari pengguna; angka uang/volume harus terhingga dan ≥ 0.
+- Uji serangan hanya di server lokal (`DATA_DIR` sementara), jangan ke production.

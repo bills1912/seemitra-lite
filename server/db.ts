@@ -112,6 +112,9 @@ const MIGRASI: string[] = [
   CREATE INDEX idx_kegiatan_bulan_kegiatan ON kegiatan(bulan_kegiatan);
   CREATE INDEX idx_kegiatan_seri ON kegiatan(seri_id);
   `,
+  /* 6 — keamanan: versi sesi per pengguna. Dinaikkan saat keluar / ganti sandi → cookie lama otomatis tidak berlaku */ `
+  ALTER TABLE pengguna ADD COLUMN versi_sesi INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 function jalankanMigrasi() {
@@ -183,8 +186,20 @@ export function simpanPengaturan(p: Partial<Pengaturan>) {
   return baru;
 }
 
-/** Kunci rahasia untuk sesi login — dibuat otomatis sekali saja. */
+/**
+ * Kunci rahasia untuk tanda tangan sesi login.
+ * - Production: WAJIB diisi lewat variabel lingkungan SESSION_SECRET (minimal 32 karakter) di Railway.
+ *   Mengganti nilainya = semua orang otomatis keluar (berguna bila ada kebocoran).
+ * - Tanpa SESSION_SECRET (pengembangan lokal): kunci dibuat otomatis dan disimpan di database.
+ *   Kunci di database TIDAK PERNAH ikut ke file cadangan.
+ */
+const KUNCI_ENV = (process.env.SESSION_SECRET ?? '').trim();
+if (KUNCI_ENV && KUNCI_ENV.length < 32) throw new Error('SESSION_SECRET minimal 32 karakter (buat dengan: openssl rand -hex 32).');
+if (!KUNCI_ENV && process.env.NODE_ENV === 'production') {
+  console.warn('[keamanan] SESSION_SECRET belum diisi — memakai kunci di database. Isi SESSION_SECRET di Railway → Variables.');
+}
 export function kunciRahasia(): string {
+  if (KUNCI_ENV) return KUNCI_ENV;
   const row = db.prepare("SELECT nilai FROM pengaturan WHERE kunci = 'rahasia'").get() as { nilai: string } | undefined;
   if (row) return row.nilai;
   const k = crypto.randomBytes(32).toString('hex');
@@ -214,20 +229,43 @@ export const TABEL_CADANGAN = ['pengaturan', 'pengguna', 'mitra', 'kegiatan', 'p
 
 export function isiCadangan() {
   const tabel: Record<string, unknown[]> = {};
-  for (const t of TABEL_CADANGAN) tabel[t] = db.prepare(`SELECT * FROM ${t}`).all();
+  for (const t of TABEL_CADANGAN) {
+    // kunci sesi tidak pernah diekspor: siapa pun yang memegang file cadangan tidak bisa memalsukan login
+    tabel[t] = db.prepare(t === 'pengaturan' ? "SELECT * FROM pengaturan WHERE kunci <> 'rahasia'" : `SELECT * FROM ${t}`).all();
+  }
   const template: Record<string, string> = {};
   for (const f of fs.readdirSync(TEMPLATE_DIR)) template[f] = fs.readFileSync(path.join(TEMPLATE_DIR, f)).toString('base64');
   return { aplikasi: 'seemitra-lite', versi: MIGRASI.length, dibuat: new Date().toISOString(), tabel, template };
 }
 
+/** Nama file template yang boleh ada di file cadangan */
+const TEMPLATE_SAH = ['spk.docx', 'bast.docx'];
+
 export function pulihkanCadangan(data: ReturnType<typeof isiCadangan>) {
-  if (data?.aplikasi !== 'seemitra-lite' || !data.tabel) throw new Error('File ini bukan file cadangan Seemitra Lite.');
+  if (data?.aplikasi !== 'seemitra-lite' || !data.tabel || typeof data.tabel !== 'object') throw new GagalCadangan('File ini bukan file cadangan Seemitra Lite.');
+  // 1) Periksa seluruh isi file DULU — belum ada data yang diubah sampai semuanya lolos
+  for (const t of TABEL_CADANGAN) {
+    const baris = data.tabel[t] ?? [];
+    if (!Array.isArray(baris)) throw new GagalCadangan(`Isi tabel "${t}" di file cadangan rusak.`);
+    const kolomSah = new Set((db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((k) => k.name));
+    for (const b of baris as Record<string, unknown>[]) {
+      if (!b || typeof b !== 'object') throw new GagalCadangan(`Isi tabel "${t}" di file cadangan rusak.`);
+      for (const k of Object.keys(b)) if (!kolomSah.has(k)) throw new GagalCadangan(`Kolom "${k}" tidak dikenal di tabel "${t}". File cadangan ditolak.`);
+    }
+  }
+  const template = Object.entries(data.template ?? {});
+  for (const [f, b64] of template) {
+    if (!TEMPLATE_SAH.includes(f) || typeof b64 !== 'string') throw new GagalCadangan(`File template "${f}" tidak dikenal. File cadangan ditolak.`);
+  }
   simpanCadanganKeFile('sebelum-pemulihan');
+  // 2) Kunci sesi yang sedang berlaku dipertahankan (baris 'rahasia' dari file lama diabaikan)
+  const kunciLama = db.prepare("SELECT nilai FROM pengaturan WHERE kunci = 'rahasia'").get() as { nilai: string } | undefined;
   transaksi(() => {
     db.exec('PRAGMA defer_foreign_keys = ON');
     for (const t of [...TABEL_CADANGAN].reverse()) db.exec(`DELETE FROM ${t}`);
     for (const t of TABEL_CADANGAN) {
       for (const baris of (data.tabel[t] ?? []) as Record<string, unknown>[]) {
+        if (t === 'pengaturan' && baris.kunci === 'rahasia') continue;
         const kolom = Object.keys(baris);
         if (!kolom.length) continue;
         db.prepare(`INSERT INTO ${t} (${kolom.join(',')}) VALUES (${kolom.map(() => '?').join(',')})`).run(
@@ -235,10 +273,14 @@ export function pulihkanCadangan(data: ReturnType<typeof isiCadangan>) {
         );
       }
     }
+    if (kunciLama) db.prepare("INSERT INTO pengaturan VALUES ('rahasia', ?)").run(kunciLama.nilai);
   });
   for (const f of fs.readdirSync(TEMPLATE_DIR)) fs.rmSync(path.join(TEMPLATE_DIR, f));
-  for (const [f, b64] of Object.entries(data.template ?? {})) fs.writeFileSync(path.join(TEMPLATE_DIR, path.basename(f)), Buffer.from(b64, 'base64'));
+  for (const [f, b64] of template) fs.writeFileSync(path.join(TEMPLATE_DIR, f), Buffer.from(b64 as string, 'base64'));
 }
+
+/** Galat pemulihan cadangan dengan pesan yang ramah (ditampilkan apa adanya ke pengguna) */
+export class GagalCadangan extends Error {}
 
 export function simpanCadanganKeFile(awalan: string) {
   const nama = `${awalan}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;

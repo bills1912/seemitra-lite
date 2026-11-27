@@ -4,7 +4,7 @@ import type { Pengaturan, Pengguna } from './types';
 import { useUmpan } from '../components/umpan';
 
 export const useSaya = () =>
-  useQuery({ queryKey: ['saya'], queryFn: () => api.get<{ pengguna: Pengguna | null; perluSetup: boolean }>('/auth/saya'), staleTime: Infinity });
+  useQuery({ queryKey: ['saya'], queryFn: () => api.get<{ pengguna: Pengguna | null; perluSetup: boolean; perluKodeSetup?: boolean; turnstile?: string | null }>('/auth/saya'), staleTime: Infinity });
 
 export const usePengaturan = () => useQuery({ queryKey: ['pengaturan'], queryFn: () => api.get<Pengaturan>('/pengaturan'), staleTime: 60_000 });
 

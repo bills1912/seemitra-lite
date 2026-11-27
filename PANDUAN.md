@@ -70,6 +70,21 @@ Salah hapus? Tekan **Urungkan** pada notifikasi yang muncul, atau buka tautan *"
 - Data tersimpan di **volume Railway** yang terpasang di folder `/data` — data **tidak hilang** saat aplikasi diperbarui atau dijalankan ulang.
 - Setiap perubahan yang disimpan ke GitHub (cabang `main`) otomatis membuat Railway memperbarui aplikasi dalam 2–4 menit.
 
+### Pengaturan keamanan di Railway (Variables)
+Buka layanan **seemitra-lite** → tab **Variables**, lalu isi:
+
+| Nama | Isi | Keterangan |
+|---|---|---|
+| `SESSION_SECRET` | teks acak 64 karakter (buat di [it-tools.tech/token-generator](https://it-tools.tech/token-generator) atau `openssl rand -hex 32`) | **Wajib.** Kunci tanda tangan login. Mengganti nilainya = semua orang otomatis keluar (lakukan bila curiga ada kebocoran). |
+| `TURNSTILE_SITE_KEY` dan `TURNSTILE_SECRET_KEY` | dari Cloudflare → Turnstile → *Add widget* (mode **Managed**, hostname = alamat aplikasi) | Pemeriksaan anti-bot di halaman masuk & daftar. Biasanya berjalan otomatis tanpa diklik. |
+| `SETUP_TOKEN` | kode bebas | Opsional. Hanya dipakai saat aplikasi masih kosong: pendaftar pertama (admin) wajib memasukkan kode ini. |
+
+Setelah mengubah Variables, Railway menjalankan ulang aplikasi otomatis. Hal-hal lain yang sudah aktif tanpa pengaturan:
+- Salah kata sandi 5× → akun dikunci 5 menit; 20× dari satu jaringan → jaringan itu dikunci 15 menit.
+- **Keluar** dari aplikasi = keluar dari semua perangkat. **Ganti kata sandi** = perangkat lain otomatis keluar.
+- Ganti kata sandi wajib mengisi kata sandi saat ini.
+- File cadangan tidak berisi kunci login.
+
 ### Jika aplikasi tidak bisa dibuka
 1. Masuk ke [railway.com](https://railway.com) → buka proyek **seemitra-lite** → layanan **seemitra-lite**.
 2. Lihat tab **Deployments**. Jika ada yang merah (*Failed/Crashed*), klik deployment hijau terakhir → **Redeploy** (atau *Rollback*) untuk kembali ke versi yang berjalan.
@@ -92,6 +107,8 @@ Jika hasilnya gagal, gunakan **Rollback** seperti di atas.
 | `src/components/ui.tsx` | Tombol, kotak isian, jendela, dll. — ubah sekali, seluruh aplikasi ikut berubah |
 | `templates/` | Template Word bawaan SPK & BAST |
 | `Dockerfile`, `railway.json` | Resep untuk Railway |
+| `server/auth.ts`, `server/turnstile.ts` | Login, sesi, dan pemeriksaan anti-bot |
+| `docs/PERBAIKAN-KEAMANAN.md` | Hasil audit keamanan & rencana keamanan bertahap |
 
 Menjalankan di komputer sendiri (butuh Node.js 22.18+ / 24):
 ```bash

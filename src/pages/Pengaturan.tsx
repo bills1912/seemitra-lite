@@ -527,13 +527,18 @@ function TabRiwayat() {
 }
 
 function TabAkun() {
+  const [lama, setLama] = useState('');
   const [sandi, setSandi] = useState('');
   const [ulang, setUlang] = useState('');
-  const ganti = useAksi(() => api.post('/ganti-sandi', { sandi }), { sukses: 'Kata sandi diganti.', setelah: () => { setSandi(''); setUlang(''); } });
+  const ganti = useAksi(() => api.post('/ganti-sandi', { sandi_lama: lama, sandi }), {
+    sukses: 'Kata sandi diganti. Perangkat lain yang memakai akun ini otomatis keluar.',
+    setelah: () => { setLama(''); setSandi(''); setUlang(''); },
+  });
   return (
-    <Panel judul="Ganti kata sandi" kaki={<Tombol disabled={!sandi || sandi !== ulang} memuat={ganti.isPending} onClick={() => ganti.mutate(undefined)}>Simpan</Tombol>}>
+    <Panel judul="Ganti kata sandi" kaki={<Tombol disabled={!lama || !sandi || sandi !== ulang} memuat={ganti.isPending} onClick={() => ganti.mutate(undefined)}>Simpan</Tombol>}>
       <div className="grid max-w-md gap-4">
-        <Kolom label="Kata sandi baru" petunjuk="Minimal 6 karakter"><Masukan type="password" value={sandi} onChange={(e) => setSandi(e.target.value)} /></Kolom>
+        <Kolom label="Kata sandi saat ini" petunjuk="Untuk memastikan yang mengganti adalah pemilik akun"><Masukan type="password" autoComplete="current-password" value={lama} onChange={(e) => setLama(e.target.value)} /></Kolom>
+        <Kolom label="Kata sandi baru" petunjuk="Minimal 6 karakter"><Masukan type="password" autoComplete="new-password" value={sandi} onChange={(e) => setSandi(e.target.value)} /></Kolom>
         <Kolom label="Ulangi kata sandi" galat={ulang && sandi !== ulang ? 'Kata sandi belum sama' : undefined}><Masukan type="password" value={ulang} onChange={(e) => setUlang(e.target.value)} /></Kolom>
       </div>
     </Panel>

@@ -507,16 +507,26 @@ data.post('/petugas/hapus-banyak', async (c) => {
 data.post('/penugasan/pulihkan', async (c) => {
   const { rows } = (await c.req.json()) as { rows: Record<string, unknown>[] };
   if (!Array.isArray(rows) || !rows.length) throw new GagalError('Tidak ada data untuk dipulihkan.');
+  const oleh = c.get('pengguna').nama; // pencatat diambil dari sesi, bukan dari data kiriman
   let n = 0;
   transaksi(() => {
     const st = db.prepare('INSERT OR IGNORE INTO penugasan (kegiatan_id, mitra_id, peran, volume, tarif, catatan, dibuat_oleh) VALUES (?, ?, ?, ?, ?, ?, ?)');
     for (const r of rows) {
-      n += Number(st.run(Number(r.kegiatan_id), Number(r.mitra_id), String(r.peran), Number(r.volume ?? 0), Number(r.tarif ?? 0),
-        (r.catatan as string) ?? null, (r.dibuat_oleh as string) ?? null).changes);
+      if (!r || typeof r !== 'object') continue;
+      n += Number(st.run(Number(r.kegiatan_id), Number(r.mitra_id), String(r.peran), angkaSah(r.volume ?? 0, 'Volume'), angkaSah(r.tarif ?? 0, 'Tarif'),
+        typeof r.catatan === 'string' ? r.catatan : null, oleh).changes);
     }
   });
+  catat(oleh, 'Pulihkan penugasan', `${n} penugasan`);
   return c.json({ jumlah: n });
 });
+
+/** Volume/tarif harus angka terhingga dan tidak negatif */
+function angkaSah(v: unknown, label: string) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) throw new GagalError(`${label} harus berupa angka 0 atau lebih.`);
+  return n;
+}
 
 const daftarIdPenugasan = (v: unknown) => {
   const ids = Array.isArray(v) ? [...new Set(v.map(Number).filter((x) => Number.isInteger(x) && x > 0))] : [];
@@ -542,7 +552,7 @@ data.post('/kegiatan/:id/petugas', async (c) => {
     const oleh = c.get('pengguna').nama;
     for (const it of items) {
       if (!it.peran) throw new GagalError('Peran petugas wajib dipilih.');
-      st.run(id, it.mitra_id, it.peran, Number(it.volume ?? 0), Number(it.tarif ?? tarif[it.peran] ?? 0), teks(it.catatan), oleh);
+      st.run(id, it.mitra_id, it.peran, angkaSah(it.volume ?? 0, 'Volume'), angkaSah(it.tarif ?? tarif[it.peran] ?? 0, 'Tarif'), teks(it.catatan), oleh);
     }
   });
   catat(c.get('pengguna').nama, 'Tambah petugas', `${items.length} mitra → ${k.nama}`);
@@ -554,12 +564,21 @@ data.put('/petugas/:id', async (c) => {
   const b = await c.req.json();
   const lama = db.prepare('SELECT * FROM penugasan WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   if (!lama) throw new GagalError('Data penugasan tidak ditemukan.', 404);
+  const peran = String(b.peran ?? lama.peran), volume = angkaSah(b.volume ?? lama.volume, 'Volume'), tarif = angkaSah(b.tarif ?? lama.tarif, 'Tarif');
   try {
     db.prepare('UPDATE penugasan SET peran = ?, volume = ?, tarif = ?, catatan = ? WHERE id = ?').run(
-      String(b.peran ?? lama.peran), Number(b.volume ?? lama.volume), Number(b.tarif ?? lama.tarif),
-      b.catatan === undefined ? (lama.catatan as string | null) : teks(b.catatan), id);
+      peran, volume, tarif, b.catatan === undefined ? (lama.catatan as string | null) : teks(b.catatan), id);
   } catch {
     throw new GagalError('Mitra ini sudah memiliki peran tersebut di kegiatan ini.');
+  }
+  // riwayat perubahan honor (volume/tarif/peran) agar bisa ditelusuri
+  const ubah: string[] = [];
+  if (peran !== lama.peran) ubah.push(`peran ${lama.peran} → ${peran}`);
+  if (volume !== Number(lama.volume)) ubah.push(`volume ${lama.volume} → ${volume}`);
+  if (tarif !== Number(lama.tarif)) ubah.push(`tarif ${lama.tarif} → ${tarif}`);
+  if (ubah.length) {
+    const info = db.prepare('SELECT m.nama mitra, k.nama kegiatan FROM penugasan p JOIN mitra m ON m.id = p.mitra_id JOIN kegiatan k ON k.id = p.kegiatan_id WHERE p.id = ?').get(id) as { mitra: string; kegiatan: string } | undefined;
+    catat(c.get('pengguna').nama, 'Ubah honor petugas', `${info?.mitra ?? '#' + id} · ${info?.kegiatan ?? ''}: ${ubah.join(', ')}`);
   }
   return c.json({ ok: true });
 });
@@ -765,18 +784,34 @@ data.get('/cari', (c) => {
  * Agar unduhan selalu berhasil di semua browser, file tidak dikirim lewat JavaScript.
  * Aplikasi web meminta file dengan header "X-Siapkan: 1"; server menyimpan file sementara (15 menit)
  * dan membalas alamat unduhan. Browser lalu mengunduh langsung dari alamat itu seperti unduhan biasa
- * (nama file benar, bisa "Coba lagi", aman walau jendela "Simpan sebagai" dibiarkan terbuka lama).
+ * (nama file benar, aman walau jendela "Simpan sebagai" dibiarkan terbuka lama).
+ * Keamanan: alamat hanya bisa dipakai oleh pengguna yang memintanya, berlaku sekali (ada jeda 60 detik
+ * untuk percobaan ulang otomatis browser), dan total file sementara dibatasi 200 MB.
  */
 const MASA_SIMPAN_UNDUHAN = 15 * 60e3;
-const unduhanSementara = new Map<string, { buf: Uint8Array; nama: string; tipe: string; sampai: number }>();
+const JEDA_SETELAH_DIPAKAI = 60e3;
+const BATAS_TOTAL_UNDUHAN = 200 * 1024 * 1024;
+type Unduhan = { buf: Uint8Array; nama: string; tipe: string; sampai: number; pengguna: number; dipakai: boolean };
+const unduhanSementara = new Map<string, Unduhan>();
+const bersihkanUnduhan = () => {
+  const sekarang = Date.now();
+  for (const [k, v] of unduhanSementara) if (v.sampai < sekarang) unduhanSementara.delete(k);
+};
 
 export function unduh(c: Context, buf: Uint8Array, nama: string, tipe?: string) {
   const jenis = tipe ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   if (c.req.header('x-siapkan') === '1') {
-    const sekarang = Date.now();
-    for (const [k, v] of unduhanSementara) if (v.sampai < sekarang) unduhanSementara.delete(k);
+    bersihkanUnduhan();
+    // jaga total memori: buang file sementara paling lama bila melebihi batas
+    let total = buf.byteLength;
+    for (const v of unduhanSementara.values()) total += v.buf.byteLength;
+    for (const [k, v] of unduhanSementara) {
+      if (total <= BATAS_TOTAL_UNDUHAN) break;
+      total -= v.buf.byteLength;
+      unduhanSementara.delete(k);
+    }
     const token = crypto.randomBytes(24).toString('hex');
-    unduhanSementara.set(token, { buf, nama, tipe: jenis, sampai: sekarang + MASA_SIMPAN_UNDUHAN });
+    unduhanSementara.set(token, { buf, nama, tipe: jenis, sampai: Date.now() + MASA_SIMPAN_UNDUHAN, pengguna: c.get('pengguna')?.id ?? 0, dipakai: false });
     return c.json({ url: `/api/unduh/${token}/${encodeURIComponent(nama)}`, nama });
   }
   return kirimFile(c, buf, nama, jenis);
@@ -792,8 +827,10 @@ export function kirimFile(c: Context, buf: Uint8Array, nama: string, tipe: strin
   });
 }
 
-export function ambilUnduhan(token: string) {
+/** Mengambil file sementara; hanya untuk pengguna yang memintanya. Setelah dipakai, alamat segera kedaluwarsa. */
+export function ambilUnduhan(token: string, idPengguna: number | undefined) {
   const u = unduhanSementara.get(token);
-  if (!u || u.sampai < Date.now()) return null;
+  if (!u || u.sampai < Date.now() || !idPengguna || u.pengguna !== idPengguna) return null;
+  if (!u.dipakai) { u.dipakai = true; u.sampai = Math.min(u.sampai, Date.now() + JEDA_SETELAH_DIPAKAI); }
   return u;
 }

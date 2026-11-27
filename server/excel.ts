@@ -60,17 +60,28 @@ function bacaCsv(teks: string): string[][] {
   return hasil;
 }
 
+/** Batas impor agar file raksasa tidak membuat server macet */
+const MAKS_BARIS_IMPOR = 5000;
+const MAKS_KOLOM_IMPOR = 50;
+function cekUkuranTabel(baris: number, kolom: number) {
+  if (baris > MAKS_BARIS_IMPOR + 10) throw new GagalError(`File terlalu besar: maksimal ${MAKS_BARIS_IMPOR.toLocaleString('id-ID')} baris per impor. Bagi file menjadi beberapa bagian.`);
+  if (kolom > MAKS_KOLOM_IMPOR) throw new GagalError(`File terlalu lebar: maksimal ${MAKS_KOLOM_IMPOR} kolom. Hapus kolom yang tidak dipakai.`);
+}
+
 /** Membaca sheet pertama Excel (.xlsx) menjadi tabel teks. */
 async function bacaXlsx(buf: ArrayBuffer): Promise<string[][]> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf as ArrayBuffer);
   const ws = wb.worksheets[0];
   if (!ws) return [];
+  cekUkuranTabel(ws.rowCount, ws.columnCount);
+  const jumlahKolom = Math.min(ws.columnCount, MAKS_KOLOM_IMPOR);
   const hasil: string[][] = [];
   for (let r = 1; r <= ws.rowCount; r++) {
     const row = ws.getRow(r);
     const isi: string[] = [];
-    for (let c = 1; c <= Math.max(ws.columnCount, row.cellCount); c++) isi.push(String(row.getCell(c).text ?? '').trim());
+    const sampai = Math.min(Math.max(jumlahKolom, row.cellCount), MAKS_KOLOM_IMPOR);
+    for (let c = 1; c <= sampai; c++) isi.push(String(row.getCell(c).text ?? '').trim());
     hasil.push(isi);
   }
   return hasil;
@@ -88,9 +99,13 @@ export async function bacaExcel(buf: ArrayBuffer, peta: Record<string, string[]>
   let tabel: string[][];
   if (zip) {
     try { tabel = await bacaXlsx(buf); }
-    catch { throw new GagalError('File Excel tidak dapat dibaca. Pastikan file tidak rusak dan berformat .xlsx.'); }
+    catch (e) {
+      if (e instanceof GagalError) throw e;
+      throw new GagalError('File Excel tidak dapat dibaca. Pastikan file tidak rusak dan berformat .xlsx.');
+    }
   } else if (/\.(csv|txt|tsv)$/i.test(namaFile) || !namaFile) {
     tabel = bacaCsv(new TextDecoder('utf-8').decode(buf));
+    cekUkuranTabel(tabel.length, Math.max(0, ...tabel.slice(0, 20).map((b) => b.length)));
   } else {
     throw new GagalError('Format file tidak dikenali. Gunakan file Excel (.xlsx) atau CSV (.csv).');
   }
