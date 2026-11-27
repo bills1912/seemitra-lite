@@ -19,6 +19,7 @@ Hampir semua hal yang biasa berubah dari tahun ke tahun bisa diatur langsung dar
 | Menambah / menghapus akun pengguna, reset kata sandi | **Pengaturan → Pengguna**. Rekan juga bisa klik *Daftar di sini* di halaman masuk, lalu admin klik **Setujui** |
 | Mencadangkan / memulihkan data | **Pengaturan → Cadangan data** |
 | Menghapus banyak mitra/kegiatan sekaligus (admin) | Tombol **Pilih** di halaman Mitra/Kegiatan → centang → **Hapus** (masuk tempat sampah, bisa diurungkan) |
+| Mengosongkan penugasan mitra (admin) | Halaman **Mitra** → **Pilih** → centang mitra → **Hapus penugasan** (bisa diurungkan), atau tombol **Reset penugasan** untuk seluruh mitra (ketik HAPUS SEMUA; cadangan dibuat otomatis). Data mitra & kegiatan tetap ada |
 | Menghapus SBML yang salah isi (admin) | **Pengaturan → Batas honor (SBML)** → tombol **Hapus SBML [tahun]** atau ikon tempat sampah di tabel ringkasan (bisa diurungkan) |
 | Mengosongkan seluruh data mitra/kegiatan/SBML, mis. awal tahun (admin) | **Pengaturan → Reset data** (permanen; cadangan dibuat otomatis lebih dulu) |
 | Melihat siapa mengubah apa | **Pengaturan → Riwayat aktivitas** |

@@ -684,6 +684,40 @@ for (const tabel of ['mitra', 'kegiatan'] as const) {
   });
 }
 
+/**
+ * HAPUS PENUGASAN MITRA — mengosongkan riwayat penugasan (data mitra & kegiatan tetap ada).
+ * - { ids: [..] }  → hanya mitra yang dipilih
+ * - { semua: true, konfirmasi: 'HAPUS SEMUA' } → seluruh mitra; nomor SPK/BAST ikut dikosongkan dan file cadangan dibuat dulu
+ * - { pratinjau: true } → hanya menghitung, tidak menghapus
+ * Baris yang dihapus dikirim balik agar bisa diurungkan lewat /penugasan/pulihkan.
+ */
+data.post('/mitra/hapus-penugasan', wajibAdmin, async (c) => {
+  const b = (await c.req.json()) as { ids?: unknown; semua?: boolean; pratinjau?: boolean; konfirmasi?: string };
+  const ids = b.semua ? [] : daftarId(b.ids);
+  const syarat = b.semua ? '1 = 1' : `p.mitra_id IN (${tanda(ids)})`;
+  const ringkas = db.prepare(`SELECT COUNT(*) penugasan, COUNT(DISTINCT p.mitra_id) mitra, COUNT(DISTINCT p.kegiatan_id) kegiatan FROM penugasan p WHERE ${syarat}`)
+    .get(...ids) as { penugasan: number; mitra: number; kegiatan: number };
+  if (b.pratinjau) {
+    const per = db.prepare(`SELECT p.mitra_id, COUNT(*) n FROM penugasan p WHERE ${syarat} GROUP BY p.mitra_id`).all(...ids) as { mitra_id: number; n: number }[];
+    return c.json({ ...ringkas, per_mitra: Object.fromEntries(per.map((r) => [r.mitra_id, r.n])) });
+  }
+  if (!ringkas.penugasan) throw new GagalError('Mitra yang dipilih belum punya penugasan.');
+  let cadangan: string | null = null;
+  if (b.semua) {
+    if (String(b.konfirmasi ?? '').trim().toUpperCase() !== 'HAPUS SEMUA') throw new GagalError('Ketik HAPUS SEMUA untuk mengonfirmasi.');
+    cadangan = simpanCadanganKeFile('sebelum-reset');
+  }
+  const rows = transaksi(() => {
+    const r = db.prepare(`SELECT p.kegiatan_id, p.mitra_id, p.peran, p.volume, p.tarif, p.catatan, p.dibuat_oleh FROM penugasan p WHERE ${syarat}`).all(...ids);
+    db.prepare(`DELETE FROM penugasan AS p WHERE ${syarat}`).run(...ids);
+    if (b.semua) db.exec('DELETE FROM nomor_dokumen; DELETE FROM spk_bulan;');
+    return r;
+  });
+  catat(c.get('pengguna').nama, b.semua ? 'Reset penugasan semua mitra' : 'Hapus penugasan mitra terpilih',
+    `${rows.length} penugasan dari ${ringkas.mitra} mitra${cadangan ? ` — cadangan: ${cadangan}` : ''}`);
+  return c.json({ ...ringkas, jumlah: rows.length, rows, cadangan });
+});
+
 data.get('/reset/ringkasan', wajibAdmin, (c) => {
   const n = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
   return c.json({

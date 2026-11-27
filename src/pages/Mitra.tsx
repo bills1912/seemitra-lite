@@ -3,12 +3,12 @@ import { Link, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  ArchiveRestore, CalendarDays, CheckSquare, Download, FileSignature, Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users, Wallet,
+  ArchiveRestore, CalendarDays, CheckSquare, Download, Eraser, FileSignature, Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users, Wallet,
 } from 'lucide-react';
 import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Mitra } from '../lib/types';
 import { useAksi, usePengaturan, useSaya } from '../lib/hooks';
-import { BilahPilihan, JendelaHapusBanyak } from '../components/HapusBanyak';
+import { BilahPilihan, JendelaHapusBanyak, JendelaHapusPenugasan } from '../components/HapusBanyak';
 import { jumlahPerPeran, persen, statusSbml, statusTerburuk } from '../lib/sbml';
 import { useUmpan } from '../components/umpan';
 import { Pilihan, IsianSaran } from '../components/pemilih';
@@ -35,6 +35,10 @@ export function HalamanMitra() {
   const [terpilih, setTerpilih] = useState<Set<number>>(new Set());
   const [konfirmHapus, setKonfirmHapus] = useState(false);
   const [menghapus, setMenghapus] = useState(false);
+  /** hapus penugasan: daftar mitra terpilih (dibekukan saat popup dibuka) atau 'semua' = seluruh mitra */
+  const [bukaTugas, setBukaTugas] = useState(false);
+  const [sasaranTugas, setSasaranTugas] = useState<{ id: number; nama: string }[] | 'semua'>('semua');
+  const hapusPenugasan = (sasaran: typeof sasaranTugas) => { setSasaranTugas(sasaran); setBukaTugas(true); };
   const balikPilih = (id: number) => setTerpilih((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const selesaiPilih = () => { setModePilih(false); setTerpilih(new Set()); };
   const { beritahu, konfirmasi } = useUmpan();
@@ -88,6 +92,7 @@ export function HalamanMitra() {
         sub={sampah ? 'Mitra yang dihapus dapat dipulihkan dari sini.' : `${data?.filter((m) => m.status === 'aktif').length ?? 0} mitra aktif terdaftar`}
         aksi={sampah ? <Tombol varian="kedua" onClick={() => setSampah(false)}>Kembali ke daftar</Tombol> : <>
           {admin && <Tombol varian={modePilih ? 'lembut' : 'kedua'} ikon={<CheckSquare className="size-4" />} onClick={() => (modePilih ? selesaiPilih() : setModePilih(true))}>{modePilih ? 'Batal pilih' : 'Pilih'}</Tombol>}
+          {admin && <Tombol varian="kedua" ikon={<Eraser className="size-4" />} onClick={() => hapusPenugasan('semua')}>Reset penugasan</Tombol>}
           <Tombol varian="kedua" ikon={<Upload className="size-4" />} onClick={() => setImpor(true)}>Impor Excel</Tombol>
           <Tombol varian="kedua" ikon={<Download className="size-4" />} onClick={() => unduhFile('/mitra-ekspor').catch((e) => beritahu('galat', e.message))}>Ekspor</Tombol>
           <Tombol ikon={<Plus className="size-4" />} onClick={() => setForm({ status: 'aktif' })}>Tambah Mitra</Tombol>
@@ -161,7 +166,10 @@ export function HalamanMitra() {
       {!sampah && <button onClick={() => setSampah(true)} className="mt-4 flex items-center gap-1.5 text-sm font-medium text-stone-400 hover:text-stone-600"><Trash2 className="size-4" /> Lihat mitra yang terhapus</button>}
 
       <BilahPilihan aktif={modePilih} jumlah={terpilih.size} totalTampil={tersaring.length}
-        pilihSemua={() => setTerpilih(new Set(tersaring.map((m) => m.id)))} kosongkan={() => setTerpilih(new Set())} batal={selesaiPilih} hapus={() => setKonfirmHapus(true)} />
+        pilihSemua={() => setTerpilih(new Set(tersaring.map((m) => m.id)))} kosongkan={() => setTerpilih(new Set())} batal={selesaiPilih} hapus={() => setKonfirmHapus(true)}
+        aksiLain={<Tombol kecil varian="kedua" disabled={!terpilih.size} ikon={<Eraser className="size-3.5" />} onClick={() => hapusPenugasan((data ?? []).filter((m) => terpilih.has(m.id)).map((m) => ({ id: m.id, nama: m.nama })))}>Hapus penugasan</Tombol>} />
+      <JendelaHapusPenugasan buka={bukaTugas} tutup={() => setBukaTugas(false)} mitra={sasaranTugas}
+        selesai={sasaranTugas === 'semua' ? undefined : selesaiPilih} />
       <JendelaHapusBanyak buka={konfirmHapus} tutup={() => setKonfirmHapus(false)} jenis="mitra" memuat={menghapus} setuju={hapusBanyak}
         nama={(data ?? []).filter((m) => terpilih.has(m.id)).map((m) => m.nama)}
         keterangan={<>Mitra dipindahkan ke <b>tempat sampah</b> dan masih bisa dipulihkan. Penugasan mereka tidak dihitung selama di tempat sampah. Untuk mengosongkan seluruh data secara permanen, gunakan <b>Pengaturan → Reset data</b>.</>} />
