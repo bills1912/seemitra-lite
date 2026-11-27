@@ -66,3 +66,17 @@ export class GagalError extends Error {
     this.status = status;
   }
 }
+
+/**
+ * Menyamarkan data sensitif (NIK, nomor rekening) untuk tampilan: 1278••••••••0012.
+ * Nilai penuh hanya bisa dilihat lewat tombol "Tampilkan" (tercatat di riwayat) dan dipakai utuh di SPK/BAST.
+ */
+export function samarkan(v: unknown): string | null {
+  if (v === null || v === undefined || v === '') return null;
+  const s = String(v).replace(/\s+/g, '');
+  if (s.length <= 4) return '••••';
+  if (s.length < 12) return '•'.repeat(s.length - 4) + s.slice(-4);
+  return s.slice(0, 4) + '•'.repeat(s.length - 8) + s.slice(-4);
+}
+/** true bila nilai berasal dari tampilan tersamar (jangan disimpan menimpa nilai asli) */
+export const tersamar = (v: unknown) => typeof v === 'string' && v.includes('•');

@@ -11,14 +11,15 @@ import { secureHeaders } from 'hono/secure-headers';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, buatCadanganOtomatis, catat, transaksi, DATA_DIR } from './db.ts';
+import { db, ambilPengaturan, buatCadanganOtomatis, catat, transaksi, DATA_DIR } from './db.ts';
 import { buatSesi, cabutSemuaSesi, cocokSandi, cocokSandiTiruan, hapusSesi, hashSandi, penggunaDariSesi, wajibLogin, type Env } from './auth.ts';
 import { cekTurnstile, ipKlien, KUNCI_SITUS, turnstileAktif } from './turnstile.ts';
+import { batasiPengguna, buatPembatas } from './pembatas.ts';
 import { GagalError } from './util.ts';
 import { data, ambilUnduhan, kirimFile } from './routes/data.ts';
 import { laporan } from './routes/laporan.ts';
 import { dokumen } from './routes/dokumen.ts';
-import { sistem } from './routes/sistem.ts';
+import { sistem, hashToken } from './routes/sistem.ts';
 
 const app = new Hono<Env>();
 const PRODUKSI = process.env.NODE_ENV === 'production';
@@ -53,6 +54,9 @@ app.use('*', secureHeaders({
   crossOriginEmbedderPolicy: false,
 }));
 
+/* ---------- Jangan diindeks mesin pencari (aplikasi internal) ---------- */
+app.use('*', async (c, next) => { await next(); c.header('X-Robots-Tag', 'noindex, nofollow, noarchive'); });
+
 /* ---------- Batas ukuran kiriman ---------- */
 const terlaluBesar = (batas: string) => (c: import('hono').Context) =>
   c.json({ pesan: `Data yang dikirim terlalu besar (maksimal ${batas}).` }, 413);
@@ -65,30 +69,10 @@ app.use('/api/*', (c, next) => (c.req.path === '/api/cadangan/pulihkan' ? batasC
 app.get('/api/sehat', (c) => c.json({ ok: true }));
 
 /* ---------- Pembatas laju (anti tebak sandi / anti bot) ---------- */
-function buatPembatas(maks: number, jendelaMs: number, ukuranMaks = 20000) {
-  const peta = new Map<string, { n: number; sampai: number }>();
-  const ambil = (k: string) => {
-    const e = peta.get(k);
-    if (e && Date.now() > e.sampai) { peta.delete(k); return undefined; }
-    return e;
-  };
-  setInterval(() => { const t = Date.now(); for (const [k, e] of peta) if (t > e.sampai) peta.delete(k); }, 5 * 60e3).unref();
-  return {
-    penuh: (k: string) => (ambil(k)?.n ?? 0) >= maks,
-    tambah: (k: string) => {
-      const e = ambil(k);
-      if (e) e.n++;
-      else {
-        if (peta.size >= ukuranMaks) peta.delete(peta.keys().next().value!); // buang yang paling lama
-        peta.set(k, { n: 1, sampai: Date.now() + jendelaMs });
-      }
-    },
-    hapus: (k: string) => peta.delete(k),
-  };
-}
 const gagalPerAkun = buatPembatas(5, 5 * 60e3);   // 5 salah per akun / 5 menit
 const gagalPerIp = buatPembatas(20, 15 * 60e3);   // 20 salah per IP / 15 menit
 const daftarPerIp = buatPembatas(5, 60 * 60e3);   // 5 pendaftaran per IP / jam
+const cekUndanganPerIp = buatPembatas(30, 15 * 60e3); // 30 pemeriksaan tautan undangan per IP / 15 menit
 const PESAN_TERLALU_BANYAK = 'Terlalu banyak percobaan. Silakan tunggu beberapa menit lalu coba lagi.';
 const PESAN_CAPTCHA = 'Verifikasi keamanan gagal. Muat ulang halaman lalu coba lagi.';
 
@@ -107,16 +91,32 @@ app.get('/api/auth/saya', (c) => {
   return c.json({
     pengguna: penggunaDariSesi(c), perluSetup,
     perluKodeSetup: perluSetup && Boolean(SETUP_TOKEN),
+    pendaftaranTerbuka: ambilPengaturan().pendaftaran_terbuka,
     turnstile: turnstileAktif() ? KUNCI_SITUS : null,
   });
+});
+
+type Undangan = { id: number; peran: string; untuk: string | null };
+const cariUndangan = (token: unknown) => (typeof token === 'string' && token.length >= 20 && token.length <= 100
+  ? db.prepare("SELECT id, peran, untuk FROM undangan WHERE hash_token = ? AND dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get(hashToken(token)) as Undangan | undefined
+  : undefined);
+
+/** Memeriksa tautan undangan (dipakai halaman daftar untuk menampilkan "Anda diundang sebagai …"). */
+app.get('/api/auth/undangan/:token', (c) => {
+  const ip = ipKlien(c);
+  if (cekUndanganPerIp.penuh(ip)) throw new GagalError(PESAN_TERLALU_BANYAK, 429);
+  const u = cariUndangan(c.req.param('token'));
+  if (!u) cekUndanganPerIp.tambah(ip);
+  return c.json(u ? { sah: true, peran: u.peran, untuk: u.untuk } : { sah: false });
 });
 
 /**
  * Pendaftaran akun.
  * - Jika belum ada pengguna sama sekali: pendaftar pertama otomatis menjadi ADMIN dan langsung masuk
  *   (bila SETUP_TOKEN diisi, wajib memasukkan kode tersebut).
- * - Selanjutnya: akun dibuat sebagai operator berstatus "menunggu" sampai disetujui admin
- *   (Pengaturan → Pengguna). Ini mencegah orang asing melihat data mitra.
+ * - Selanjutnya (bawaan): HANYA lewat tautan undangan dari admin → akun langsung aktif dengan peran dari undangan.
+ * - Bila admin membuka pendaftaran umum (Pengaturan → Pengguna): tanpa undangan pun bisa mendaftar,
+ *   tetapi akun berstatus "menunggu" sampai disetujui admin.
  */
 app.post('/api/auth/daftar', async (c) => {
   const body = await c.req.json().catch(() => ({}));
@@ -129,6 +129,11 @@ app.post('/api/auth/daftar', async (c) => {
   if (!/^[A-Za-z0-9._-]{3,30}$/.test(username)) throw new GagalError('Username 3–30 karakter, hanya huruf, angka, titik, garis bawah, atau strip.');
   if (sandi.length < 6 || sandi.length > 128) throw new GagalError('Kata sandi 6–128 karakter.');
   const pertama = jumlahPengguna() === 0;
+  const undangan = pertama ? undefined : cariUndangan(body.undangan);
+  if (!pertama && !undangan) {
+    if (body.undangan) { daftarPerIp.tambah(ip); throw new GagalError('Tautan undangan tidak berlaku (sudah dipakai, dibatalkan, atau lewat 72 jam). Minta tautan baru kepada admin.', 403); }
+    if (!ambilPengaturan().pendaftaran_terbuka) throw new GagalError('Pendaftaran hanya bisa lewat tautan undangan dari admin.', 403);
+  }
   if (pertama && SETUP_TOKEN && !samaPersis(String(body.kode_setup ?? '').trim(), SETUP_TOKEN)) {
     daftarPerIp.tambah(ip);
     throw new GagalError('Kode setup salah. Tanyakan kode setup kepada pengelola server.', 403);
@@ -138,16 +143,23 @@ app.post('/api/auth/daftar', async (c) => {
   let id = 0;
   try {
     transaksi(() => {
+      const peran = pertama ? 'admin' : undangan ? undangan.peran : 'operator';
       const r = db.prepare('INSERT INTO pengguna (username, nama, password_hash, peran, status) VALUES (?, ?, ?, ?, ?)').run(
-        username, nama, hash, pertama ? 'admin' : 'operator', pertama ? 'aktif' : 'menunggu');
+        username, nama, hash, peran, pertama || undangan ? 'aktif' : 'menunggu');
       id = Number(r.lastInsertRowid);
+      if (undangan) {
+        // tandai terpakai; bila undangan sudah dipakai orang lain di saat bersamaan → batalkan
+        const t = db.prepare("UPDATE undangan SET dipakai = datetime('now','localtime'), dipakai_oleh = ? WHERE id = ? AND dipakai IS NULL").run(username, undangan.id);
+        if (!t.changes) throw new Error('undangan terpakai');
+      }
       if (pertama) catat(nama, 'Membuat akun admin pertama', username);
+      else if (undangan) catat(nama, 'Mendaftar lewat undangan', `${username} (${peran})`);
       else catat(nama, 'Mendaftar akun (menunggu persetujuan)', username);
     });
   } catch {
     throw new GagalError('Username sudah dipakai. Pilih username lain.');
   }
-  if (pertama) {
+  if (pertama || undangan) {
     buatSesi(c, id);
     return c.json({ ok: true, masuk: true });
   }
@@ -195,6 +207,18 @@ app.get('/api/unduh/:token/:nama?', (c) => {
 
 /* ---------- API yang memerlukan login ---------- */
 app.use('/api/*', wajibLogin);
+
+/* ---------- Batas laju per pengguna untuk data massal (anti sedot data) ---------- */
+const batasDaftarMitra = batasiPengguna('daftar mitra', 60, 60e3, 'Terlalu sering memuat daftar mitra.');
+const batasEkspor = batasiPengguna('ekspor Excel', 10, 60 * 60e3, 'Batas ekspor Excel (10 kali per jam) tercapai.');
+const batasDokumen = batasiPengguna('pembuatan SPK/BAST', 30, 60 * 60e3, 'Batas pembuatan SPK/BAST (30 kali per jam) tercapai.');
+app.use('/api/*', (c, next) => {
+  const p = c.req.path, m = c.req.method;
+  if (m === 'GET' && p === '/api/mitra') return batasDaftarMitra(c, next);
+  if (m === 'GET' && (p === '/api/mitra-ekspor' || p === '/api/rekap/ekspor')) return batasEkspor(c, next);
+  if (m === 'POST' && (p === '/api/dokumen/spk' || p === '/api/dokumen/bast')) return batasDokumen(c, next);
+  return next();
+});
 app.route('/api', data);
 app.route('/api', laporan);
 app.route('/api', dokumen);

@@ -29,6 +29,7 @@ export type Kandidat = {
 export type Pengaturan = {
   nama_kantor: string; wilayah: string; alamat_kantor: string; ppk_nama: string; ppk_nip: string; ppk_jabatan: string;
   format_nomor_spk: string; format_nomor_bast: string; daftar_peran: string[]; daftar_satuan: string[]; daftar_jenis: string[]; ambang_sbml: number; jeda_pembayaran: number;
+  pendaftaran_terbuka: boolean; batas_ekspor_harian: number;
 };
 
 export type BarisRekap = {

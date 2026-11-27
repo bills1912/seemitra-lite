@@ -115,6 +115,20 @@ const MIGRASI: string[] = [
   /* 6 — keamanan: versi sesi per pengguna. Dinaikkan saat keluar / ganti sandi → cookie lama otomatis tidak berlaku */ `
   ALTER TABLE pengguna ADD COLUMN versi_sesi INTEGER NOT NULL DEFAULT 0;
   `,
+  /* 7 — undangan pendaftaran: admin membuat tautan sekali pakai (berlaku 72 jam).
+     Yang disimpan hanya HASH token, bukan token aslinya. Tabel ini sengaja TIDAK ikut cadangan. */ `
+  CREATE TABLE undangan (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hash_token TEXT NOT NULL UNIQUE,
+    peran TEXT NOT NULL DEFAULT 'operator',
+    untuk TEXT,
+    dibuat_oleh TEXT,
+    dibuat TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    kedaluwarsa TEXT NOT NULL,
+    dipakai TEXT,
+    dipakai_oleh TEXT
+  );
+  `,
 ];
 
 function jalankanMigrasi() {
@@ -155,6 +169,10 @@ export type Pengaturan = {
   ambang_sbml: number;
   /** Bulan pembayaran otomatis = bulan kegiatan + jeda ini (bawaan 1 → dibayar bulan berikutnya) */
   jeda_pembayaran: number;
+  /** false (bawaan) = akun baru hanya bisa dibuat lewat tautan undangan dari admin */
+  pendaftaran_terbuka: boolean;
+  /** Admin diberi peringatan di Beranda bila satu pengguna mengekspor/membuat dokumen lebih dari ini dalam sehari */
+  batas_ekspor_harian: number;
 };
 
 export const PENGATURAN_AWAL: Pengaturan = {
@@ -172,6 +190,8 @@ export const PENGATURAN_AWAL: Pengaturan = {
   daftar_jenis: ['Survei', 'Sensus', 'Lainnya'],
   ambang_sbml: 80,
   jeda_pembayaran: 1,
+  pendaftaran_terbuka: false,
+  batas_ekspor_harian: 10,
 };
 
 export function ambilPengaturan(): Pengaturan {
@@ -224,7 +244,8 @@ export function transaksi<T>(fn: () => T): T {
   }
 }
 
-/* ---------------- Cadangan data (format JSON, bisa dipulihkan dari menu Pengaturan) ---------------- */
+/* ---------------- Cadangan data (format JSON, bisa dipulihkan dari menu Pengaturan) ----------------
+ * Catatan: tabel `undangan` sengaja tidak dicadangkan (tautan undangan bersifat sementara). */
 export const TABEL_CADANGAN = ['pengaturan', 'pengguna', 'mitra', 'kegiatan', 'penugasan', 'nomor_dokumen', 'spk_bulan', 'batas_honor', 'sbml', 'riwayat'];
 
 export function isiCadangan() {

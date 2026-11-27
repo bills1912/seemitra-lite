@@ -3,9 +3,13 @@ import { Hono } from 'hono';
 import { db } from '../db.ts';
 import type { Env } from '../auth.ts';
 import { mitraLewatSbml, sbmlBulan, unduh } from './data.ts';
+import { catat } from '../db.ts';
 import { ambilPengaturan } from '../db.ts';
 import { buatExcel } from '../excel.ts';
-import { labelBulan } from '../util.ts';
+import { labelBulan, samarkan } from '../util.ts';
+
+/** Aksi yang dihitung sebagai pengambilan data massal (untuk peringatan di Beranda admin) */
+export const AKSI_EKSPOR = ['Ekspor data mitra', 'Ekspor rekap', 'Buat SPK', 'Buat BAST'];
 
 export const laporan = new Hono<Env>();
 
@@ -65,7 +69,8 @@ laporan.get('/rekap', (c) => {
        WHERE k.dihapus IS NULL AND ${dasar === 'bayar' ? 'k.bulan_honor' : 'k.bulan_kegiatan'} = ? GROUP BY k.id ORDER BY k.tanggal_mulai`,
     )
     .all(bulan);
-  return c.json({ bulan, dasar, baris: rekapBulan(bulan, dasar), kegiatan, sbml: sbmlBulan(bulan), ambang: ambilPengaturan().ambang_sbml });
+  const baris = rekapBulan(bulan, dasar).map((b) => ({ ...b, no_rekening: samarkan(b.no_rekening) }));
+  return c.json({ bulan, dasar, baris, kegiatan, sbml: sbmlBulan(bulan), ambang: ambilPengaturan().ambang_sbml });
 });
 
 laporan.get('/rekap/ekspor', async (c) => {
@@ -73,12 +78,14 @@ laporan.get('/rekap/ekspor', async (c) => {
   const dasar = dasarDari(c.req.query('dasar'));
   const batas = sbmlBulan(bulan);
   const adaBatas = Object.keys(batas).length > 0;
+  const admin = c.get('pengguna').peran === 'admin';
   const baris = rekapBulan(bulan, dasar).map((b, i) => {
     const per: Record<string, number> = {};
     for (const t of b.tugas) per[t.peran] = (per[t.peran] ?? 0) + t.honor;
     const lewat = Object.entries(per).filter(([p, v]) => batas[p] && v > batas[p]).map(([p]) => p);
     return {
       no: i + 1, ...b,
+      no_rekening: admin ? b.no_rekening : samarkan(b.no_rekening), // operator: rekening tersamar
       rincian: b.tugas.map((t) => `${t.kegiatan} (${t.peran}): ${t.volume} ${t.satuan} × Rp${t.tarif.toLocaleString('id-ID')}`).join('; '),
       per_peran: Object.entries(per).map(([p, v]) => `${p}: Rp${Math.round(v).toLocaleString('id-ID')}`).join('; '),
       // SBML hanya bermakna bila rekap disusun per bulan kegiatan
@@ -96,6 +103,7 @@ laporan.get('/rekap/ekspor', async (c) => {
     baris,
     `Rekap Honor Mitra — ${dasar === 'bayar' ? 'dibayar' : 'kegiatan'} ${labelBulan(bulan)}${adaBatas && dasar !== 'bayar' ? ` (SBML/bulan: ${Object.entries(batas).map(([p, v]) => `${p} Rp${v.toLocaleString('id-ID')}`).join(', ')})` : ''}`,
   );
+  catat(c.get('pengguna').nama, 'Ekspor rekap', `${labelBulan(bulan)} — ${baris.length} baris${admin ? '' : ' (rekening tersamar)'}`);
   return unduh(c, buf, `Rekap Honor ${dasar === 'bayar' ? 'Pembayaran' : 'Kegiatan'} ${labelBulan(bulan)}.xlsx`);
 });
 
@@ -172,6 +180,15 @@ laporan.get('/beranda', (c) => {
   if (pengguna.peran === 'admin') {
     const n = satu("SELECT COUNT(*) n FROM pengguna WHERE status = 'menunggu'");
     if (n) perhatian.unshift({ jenis: 'info', judul: `${n} pendaftar menunggu persetujuan`, detail: 'Setujui agar mereka bisa masuk ke aplikasi.', tautan: '/pengaturan?tab=pengguna' });
+    // deteksi penyedotan data: pengguna yang terlalu sering mengekspor hari ini
+    const batasEkspor = ambilPengaturan().batas_ekspor_harian;
+    const banyak = db.prepare(
+      `SELECT pengguna, COUNT(*) n FROM riwayat WHERE date(waktu) = date('now','localtime') AND aksi IN (${AKSI_EKSPOR.map(() => '?').join(',')})
+       GROUP BY pengguna HAVING COUNT(*) > ?`,
+    ).all(...AKSI_EKSPOR, batasEkspor) as { pengguna: string; n: number }[];
+    for (const b of banyak) perhatian.unshift({ jenis: 'bahaya', judul: `${b.pengguna} mengekspor data ${b.n}× hari ini`, detail: `Melebihi batas wajar ${batasEkspor}×/hari. Periksa riwayat aktivitas bila ini tidak biasa.`, tautan: '/pengaturan?tab=riwayat' });
+    const dibatasi = satu("SELECT COUNT(*) n FROM riwayat WHERE date(waktu) = date('now','localtime') AND aksi = 'Dibatasi: terlalu banyak permintaan'");
+    if (dibatasi) perhatian.unshift({ jenis: 'peringatan', judul: `${dibatasi} kali permintaan data dibatasi hari ini`, detail: 'Ada akun yang mengambil data terlalu cepat. Lihat riwayat aktivitas.', tautan: '/pengaturan?tab=riwayat' });
   }
   return c.json({ hari, bulan, statistik, grafik, kegiatanAktif, perhatian, pengguna });
 });

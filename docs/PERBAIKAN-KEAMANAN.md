@@ -1,5 +1,7 @@
 # Tugas: Perbaikan Keamanan Seemitra Lite (hasil audit 27 Nov 2026)
 
+> Status: **Fase 1 selesai** (commit d91a2f9, migrasi 6) · **Fase 2 selesai** (migrasi 7). Fase 3–5 belum dikerjakan.
+
 > **Cara pakai:** tempel seluruh isi file ini ke sesi pengembangan Seemitra Lite, atau simpan di repo (mis. `docs/PERBAIKAN-KEAMANAN.md`) lalu minta asisten: *"Kerjakan tugas di docs/PERBAIKAN-KEAMANAN.md"*.
 
 ## Konteks
@@ -251,7 +253,7 @@ Dummy key **jangan pernah** dipakai di production.
 
 > Prioritas 1–5 di atas adalah **Fase 1**. Fase berikutnya dikerjakan setelah Fase 1 ter-deploy dan stabil. Setiap butir sebaiknya dijadikan satu branch/PR tersendiri.
 
-## Fase 2 — Anti bot lanjutan & anti scrape/crawl
+## Fase 2 — Anti bot lanjutan & anti scrape/crawl  ✅ selesai (28 Nov 2026, migrasi 7)
 
 1. **Tutup pendaftaran terbuka (direkomendasikan).** Seemitra adalah aplikasi internal satu kantor, jadi ganti `POST /api/auth/daftar` dengan **undangan dari admin**:
    - admin membuat tautan undangan sekali pakai (token acak 32 byte, berlaku 72 jam, disimpan sebagai hash di tabel baru `undangan`);

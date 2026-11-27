@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  ArchiveRestore, CalendarDays, CheckSquare, Download, Eraser, FileSignature, Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users, Wallet,
+  ArchiveRestore, CalendarDays, CheckSquare, Download, Eraser, Eye, EyeOff, FileSignature, Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users, Wallet,
 } from 'lucide-react';
 import { api, kirimFile, segarkan, unduhFile } from '../lib/api';
 import type { Mitra } from '../lib/types';
@@ -188,6 +188,25 @@ export function FormMitra({ data, tutup, daftarKec }: { data: Partial<Mitra> | n
   const simpan = useAksi((v: Partial<Mitra>) => (v.id ? api.put(`/mitra/${v.id}`, v) : api.post('/mitra', v)), {
     sukses: (_, v) => (v.id ? 'Data mitra diperbarui.' : `${v.nama} ditambahkan.`), setelah: tutup,
   });
+  // NIK & rekening datang tersamar; nilai penuh diambil hanya bila pengguna ingin mengubahnya (tercatat di riwayat)
+  const [ambilSensitif, setAmbilSensitif] = useState(false);
+  const bukaSensitif = async () => {
+    if (!f.id) return;
+    setAmbilSensitif(true);
+    try {
+      const r = await api.get<{ nik: string | null; no_rekening: string | null }>(`/mitra/${f.id}/sensitif`);
+      setF((x) => ({ ...x, nik: r.nik, no_rekening: r.no_rekening }));
+    } finally { setAmbilSensitif(false); }
+  };
+  const isianSensitif = (k: 'nik' | 'no_rekening') => {
+    const samar = String(f[k] ?? '').includes('•');
+    return samar ? (
+      <div className="flex gap-2">
+        <Masukan readOnly value={f[k] ?? ''} className="font-mono text-stone-500" />
+        <Tombol type="button" varian="kedua" memuat={ambilSensitif} ikon={<Eye className="size-4" />} onClick={bukaSensitif}>Ubah</Tombol>
+      </div>
+    ) : <Masukan inputMode="numeric" value={f[k] ?? ''} onChange={set(k)} />;
+  };
   const Bagian = ({ judul }: { judul: string }) => <h3 className="col-span-full mt-2 text-xs font-bold uppercase tracking-wider text-brand-700">{judul}</h3>;
   return (
     <Jendela buka={!!data} tutup={tutup} lebar="max-w-2xl" judul={data?.id ? 'Ubah data mitra' : 'Tambah mitra'} sub="Hanya nama yang wajib diisi. Data lain boleh dilengkapi nanti."
@@ -196,7 +215,7 @@ export function FormMitra({ data, tutup, daftarKec }: { data: Partial<Mitra> | n
         <Bagian judul="Identitas" />
         <Kolom label="Nama lengkap" wajib className="sm:col-span-2"><Masukan autoFocus value={f.nama ?? ''} onChange={set('nama')} /></Kolom>
         <Kolom label="SOBAT ID"><Masukan value={f.sobat_id ?? ''} onChange={set('sobat_id')} /></Kolom>
-        <Kolom label="NIK"><Masukan inputMode="numeric" value={f.nik ?? ''} onChange={set('nik')} /></Kolom>
+        <Kolom label="NIK">{isianSensitif('nik')}</Kolom>
         <Kolom label="Jenis kelamin">
           <Segmen id="jk" nilai={(f.jenis_kelamin ?? '') as string} ubah={(v) => setF({ ...f, jenis_kelamin: v })} opsi={[{ nilai: 'Laki-laki', label: 'Laki-laki' }, { nilai: 'Perempuan', label: 'Perempuan' }]} />
         </Kolom>
@@ -211,7 +230,7 @@ export function FormMitra({ data, tutup, daftarKec }: { data: Partial<Mitra> | n
         <Kolom label="Desa / kelurahan"><Masukan value={f.desa ?? ''} onChange={set('desa')} /></Kolom>
         <Bagian judul="Pembayaran" />
         <Kolom label="Bank"><Masukan value={f.bank ?? ''} onChange={set('bank')} placeholder="mis. BRI" /></Kolom>
-        <Kolom label="No rekening"><Masukan inputMode="numeric" value={f.no_rekening ?? ''} onChange={set('no_rekening')} /></Kolom>
+        <Kolom label="No rekening">{isianSensitif('no_rekening')}</Kolom>
         <Bagian judul="Lainnya" />
         <div className="sm:col-span-2"><Saklar aktif={f.status !== 'nonaktif'} ubah={(v) => setF({ ...f, status: v ? 'aktif' : 'nonaktif' })} label={f.status !== 'nonaktif' ? 'Mitra aktif — muncul saat memilih petugas' : 'Mitra nonaktif — tidak muncul saat memilih petugas'} /></div>
         <Kolom label="Catatan" className="sm:col-span-2"><textarea className="input min-h-20" value={f.catatan ?? ''} onChange={set('catatan')} /></Kolom>
@@ -269,6 +288,17 @@ function DetailMitra({ id, tutup, ubah }: { id: number | null; tutup: () => void
   }, [data]);
   const m = data?.mitra;
   const total = (data?.tugas ?? []).reduce((s, t) => s + t.honor, 0);
+  // NIK & rekening lengkap hanya ditampilkan bila diminta (setiap akses tercatat di riwayat)
+  const [sensitif, setSensitif] = useState<{ nik: string | null; no_rekening: string | null } | null>(null);
+  const [memuatSensitif, setMemuatSensitif] = useState(false);
+  useEffect(() => setSensitif(null), [id]);
+  const tampilkanSensitif = async () => {
+    if (!m) return;
+    setMemuatSensitif(true);
+    try { setSensitif(await api.get(`/mitra/${m.id}/sensitif`)); } finally { setMemuatSensitif(false); }
+  };
+  const nik = sensitif ? sensitif.nik : m?.nik;
+  const rekening = sensitif ? sensitif.no_rekening : m?.no_rekening;
 
   return (
     <LaciDetail buka={!!id} tutup={tutup}>
@@ -295,12 +325,20 @@ function DetailMitra({ id, tutup, ubah }: { id: number | null; tutup: () => void
             {[
               [<MapPin key="a" className="size-4" />, 'Alamat', [m.alamat, m.desa, m.kecamatan].filter(Boolean).join(', ')],
               [<Phone key="b" className="size-4" />, 'No HP', m.no_hp], [<Mail key="c" className="size-4" />, 'Email', m.email],
-              [<Wallet key="d" className="size-4" />, 'Rekening', [m.bank, m.no_rekening].filter(Boolean).join(' · ')],
-              [<Users key="e" className="size-4" />, 'NIK / JK', [m.nik, m.jenis_kelamin].filter(Boolean).join(' · ')],
+              [<Wallet key="d" className="size-4" />, 'Rekening', [m.bank, rekening].filter(Boolean).join(' · ')],
+              [<Users key="e" className="size-4" />, 'NIK / JK', [nik, m.jenis_kelamin].filter(Boolean).join(' · ')],
               [<CalendarDays key="f" className="size-4" />, 'Pekerjaan', m.pekerjaan],
             ].map(([ik, l, v], i) => (
               <div key={i} className="flex gap-3"><span className="mt-0.5 text-stone-400">{ik}</span><div><div className="text-xs text-stone-400">{l}</div><div className="font-medium text-stone-700">{v || '—'}</div></div></div>
             ))}
+            {(m.nik || m.no_rekening) && (
+              <div className="sm:col-span-2">
+                {sensitif
+                  ? <button onClick={() => setSensitif(null)} className="flex items-center gap-1.5 text-xs font-semibold text-stone-500 hover:text-stone-700"><EyeOff className="size-3.5" /> Sembunyikan NIK & rekening</button>
+                  : <button onClick={tampilkanSensitif} disabled={memuatSensitif} className="flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:underline disabled:opacity-50"><Eye className="size-3.5" /> Tampilkan NIK & rekening lengkap</button>}
+                <p className="mt-0.5 text-[11px] text-stone-400">Data pribadi ditampilkan tersamar. Setiap kali ditampilkan lengkap, tercatat di riwayat aktivitas.</p>
+              </div>
+            )}
             {m.catatan && <p className="rounded-xl bg-amber-50 p-3 text-amber-900 sm:col-span-2">{m.catatan}</p>}
           </div>
           <div className="border-t border-stone-100 px-6 py-5">

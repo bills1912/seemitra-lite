@@ -5,7 +5,7 @@ import { Hono, type Context } from 'hono';
 import crypto from 'node:crypto';
 import { db, catat, transaksi, ambilPengaturan, simpanCadanganKeFile } from '../db.ts';
 import { wajibAdmin, type Env } from '../auth.ts';
-import { akhirBulan, GagalError, geserBulan, isiNomor, labelBulan } from '../util.ts';
+import { akhirBulan, GagalError, geserBulan, isiNomor, labelBulan, samarkan, tersamar } from '../util.ts';
 import { bacaExcel, buatExcel } from '../excel.ts';
 
 export const data = new Hono<Env>();
@@ -84,14 +84,32 @@ data.get('/mitra', (c) => {
   return c.json(rows.map((m) => {
     const h = per.get(Number(m.id)) ?? {};
     const rasio = Math.max(0, ...Object.entries(h).map(([p, v]) => (batas[p] ? v / batas[p] : 0)));
-    return { ...m, rasio_sbml: Object.keys(batas).length ? rasio : null };
+    return { ...samarkanMitra(m), rasio_sbml: Object.keys(batas).length ? rasio : null };
   }));
+});
+
+/** Data sensitif (NIK & rekening) selalu ditampilkan tersamar; nilai penuh lewat /mitra/:id/sensitif */
+const KOLOM_SENSITIF = ['nik', 'no_rekening'] as const;
+export function samarkanMitra<T extends Record<string, unknown>>(m: T): T {
+  const hasil: Record<string, unknown> = { ...m };
+  for (const k of KOLOM_SENSITIF) if (k in hasil) hasil[k] = samarkan(hasil[k]);
+  return hasil as T;
+}
+
+/** Melihat NIK & nomor rekening lengkap — setiap akses dicatat di riwayat. */
+data.get('/mitra/:id/sensitif', (c) => {
+  const id = Number(c.req.param('id'));
+  const m = db.prepare('SELECT nama, nik, no_rekening FROM mitra WHERE id = ?').get(id) as { nama: string; nik: string | null; no_rekening: string | null } | undefined;
+  if (!m) throw new GagalError('Mitra tidak ditemukan.', 404);
+  catat(c.get('pengguna').nama, 'Lihat data sensitif', m.nama);
+  return c.json({ nik: m.nik, no_rekening: m.no_rekening });
 });
 
 data.get('/mitra/:id', (c) => {
   const id = Number(c.req.param('id'));
-  const mitra = db.prepare('SELECT * FROM mitra WHERE id = ?').get(id);
-  if (!mitra) throw new GagalError('Mitra tidak ditemukan.', 404);
+  const asli = db.prepare('SELECT * FROM mitra WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  if (!asli) throw new GagalError('Mitra tidak ditemukan.', 404);
+  const mitra = samarkanMitra(asli);
   const tugas = db
     .prepare(
       `SELECT p.*, k.nama AS kegiatan, k.bulan_honor, k.bulan_kegiatan, k.satuan, k.tanggal_mulai, k.tanggal_selesai, (p.volume*p.tarif) AS honor
@@ -105,6 +123,7 @@ data.get('/mitra/:id', (c) => {
 
 data.post('/mitra', async (c) => {
   const v = nilaiMitra(await c.req.json());
+  for (const k of KOLOM_SENSITIF) if (tersamar(v[k])) v[k] = null;
   const r = db
     .prepare(`INSERT INTO mitra (${KOLOM_MITRA.join(',')}) VALUES (${KOLOM_MITRA.map(() => '?').join(',')})`)
     .run(...KOLOM_MITRA.map((k) => v[k] as string | null));
@@ -115,6 +134,10 @@ data.post('/mitra', async (c) => {
 data.put('/mitra/:id', async (c) => {
   const id = Number(c.req.param('id'));
   const v = nilaiMitra(await c.req.json());
+  // isian yang masih tersamar (tidak diubah pengguna) → pertahankan nilai lama
+  const lama = db.prepare('SELECT nik, no_rekening FROM mitra WHERE id = ?').get(id) as Record<string, string | null> | undefined;
+  if (!lama) throw new GagalError('Mitra tidak ditemukan.', 404);
+  for (const k of KOLOM_SENSITIF) if (tersamar(v[k])) v[k] = lama[k];
   db.prepare(`UPDATE mitra SET ${KOLOM_MITRA.map((k) => `${k} = ?`).join(', ')}, diubah = datetime('now','localtime') WHERE id = ?`).run(
     ...KOLOM_MITRA.map((k) => v[k] as string | null),
     id,
@@ -179,6 +202,8 @@ data.post('/mitra-impor', async (c) => {
   transaksi(() => {
     for (const r of rows) {
       if (!r.nama) { dilewati++; continue; }
+      // file ekspor operator berisi NIK/rekening tersamar → jangan timpa nilai asli
+      for (const k of KOLOM_SENSITIF) if (tersamar(r[k])) delete r[k];
       const jk = (r.jenis_kelamin || '').toLowerCase();
       r.jenis_kelamin = jk.startsWith('l') ? 'Laki-laki' : jk.startsWith('p') ? 'Perempuan' : r.jenis_kelamin;
       r.status = (r.status || '').toLowerCase().includes('non') ? 'nonaktif' : 'aktif';
@@ -203,7 +228,11 @@ data.post('/mitra-impor', async (c) => {
 });
 
 data.get('/mitra-ekspor', async (c) => {
-  const rows = db.prepare('SELECT * FROM mitra WHERE dihapus IS NULL ORDER BY nama COLLATE NOCASE').all() as Record<string, unknown>[];
+  const admin = c.get('pengguna').peran === 'admin';
+  const semua = db.prepare('SELECT * FROM mitra WHERE dihapus IS NULL ORDER BY nama COLLATE NOCASE').all() as Record<string, unknown>[];
+  // operator menerima NIK & rekening tersamar; admin menerima nilai penuh (untuk impor ulang)
+  const rows = admin ? semua : semua.map(samarkanMitra);
+  catat(c.get('pengguna').nama, 'Ekspor data mitra', `${rows.length} baris${admin ? '' : ' (NIK & rekening tersamar)'}`);
   const kunci = ['nama', 'sobat_id', 'nik', 'jenis_kelamin', 'pekerjaan', 'alamat', 'kecamatan', 'desa', 'no_hp', 'email', 'bank', 'no_rekening', 'status', 'catatan'];
   const buf = await buatExcel('Mitra', JUDUL_IMPOR_MITRA.map((j, i) => ({ judul: j, kunci: kunci[i], lebar: i === 0 || i === 5 ? 28 : 16 })), rows);
   return unduh(c, buf, `Daftar Mitra ${new Date().toISOString().slice(0, 10)}.xlsx`);

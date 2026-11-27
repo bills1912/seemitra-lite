@@ -1,4 +1,5 @@
 /** PENGATURAN, PENGGUNA, BATAS HONOR, TEMPLATE DOKUMEN, CADANGAN DATA, RIWAYAT */
+import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,6 +27,12 @@ sistem.put('/pengaturan', wajibAdmin, async (c) => {
     if (!(a >= 10 && a <= 100)) throw new GagalError('Ambang peringatan SBML harus antara 10 dan 100 persen.');
     bersih.ambang_sbml = a;
   }
+  if ('pendaftaran_terbuka' in bersih) bersih.pendaftaran_terbuka = bersih.pendaftaran_terbuka === true;
+  if ('batas_ekspor_harian' in bersih) {
+    const n = Number(bersih.batas_ekspor_harian);
+    if (!(Number.isInteger(n) && n >= 1 && n <= 1000)) throw new GagalError('Batas ekspor harian harus 1 sampai 1000.');
+    bersih.batas_ekspor_harian = n;
+  }
   for (const k of ['daftar_peran', 'daftar_satuan', 'daftar_jenis']) {
     if (k in bersih) {
       const arr = [...new Set((bersih[k] as string[]).map((x) => String(x).trim()).filter(Boolean))];
@@ -33,8 +40,9 @@ sistem.put('/pengaturan', wajibAdmin, async (c) => {
       bersih[k] = arr;
     }
   }
+  const lamaTerbuka = ambilPengaturan().pendaftaran_terbuka;
   const hasil = simpanPengaturan(bersih);
-  catat(c.get('pengguna').nama, 'Ubah pengaturan');
+  catat(c.get('pengguna').nama, 'Ubah pengaturan', lamaTerbuka !== hasil.pendaftaran_terbuka ? `pendaftaran ${hasil.pendaftaran_terbuka ? 'DIBUKA untuk umum' : 'ditutup (hanya undangan)'}` : undefined);
   return c.json(hasil);
 });
 
@@ -125,6 +133,31 @@ sistem.post('/pengguna/:id/setujui', wajibAdmin, (c) => {
   catat(c.get('pengguna').nama, 'Setujui pendaftaran', u?.nama);
   return c.json({ ok: true });
 });
+/* ---------- Undangan pendaftaran (khusus admin) ----------
+ * Token acak 32 byte dikirim SEKALI ke admin (untuk dibagikan lewat WhatsApp dsb.), server hanya menyimpan hash-nya. */
+export const MASA_UNDANGAN_JAM = 72;
+export const hashToken = (t: string) => crypto.createHash('sha256').update(t).digest('hex');
+sistem.get('/undangan', wajibAdmin, (c) => c.json(db.prepare(
+  "SELECT id, peran, untuk, dibuat_oleh, dibuat, kedaluwarsa FROM undangan WHERE dipakai IS NULL AND kedaluwarsa > datetime('now','localtime') ORDER BY id DESC",
+).all()));
+sistem.post('/undangan', wajibAdmin, async (c) => {
+  const b = await c.req.json();
+  const peran = b.peran === 'admin' ? 'admin' : 'operator';
+  const untuk = typeof b.untuk === 'string' ? b.untuk.trim().slice(0, 100) || null : null;
+  const aktif = (db.prepare("SELECT COUNT(*) n FROM undangan WHERE dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get() as { n: number }).n;
+  if (aktif >= 50) throw new GagalError('Terlalu banyak undangan aktif. Batalkan undangan yang tidak dipakai terlebih dahulu.');
+  const token = crypto.randomBytes(32).toString('base64url');
+  db.prepare(`INSERT INTO undangan (hash_token, peran, untuk, dibuat_oleh, kedaluwarsa) VALUES (?, ?, ?, ?, datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours'))`)
+    .run(hashToken(token), peran, untuk, c.get('pengguna').nama);
+  catat(c.get('pengguna').nama, 'Buat undangan pendaftaran', `${peran}${untuk ? ` untuk ${untuk}` : ''}`);
+  return c.json({ token, jam: MASA_UNDANGAN_JAM });
+});
+sistem.delete('/undangan/:id', wajibAdmin, (c) => {
+  db.prepare('DELETE FROM undangan WHERE id = ? AND dipakai IS NULL').run(Number(c.req.param('id')));
+  catat(c.get('pengguna').nama, 'Batalkan undangan pendaftaran');
+  return c.json({ ok: true });
+});
+
 /** Setiap pengguna boleh mengganti kata sandinya sendiri */
 sistem.post('/ganti-sandi', async (c) => {
   const { sandi, sandi_lama } = await c.req.json();

@@ -13,9 +13,18 @@ if (!turnstileAktif() && process.env.NODE_ENV === 'production') {
   console.warn('[turnstile] NONAKTIF — isi TURNSTILE_SITE_KEY dan TURNSTILE_SECRET_KEY di Railway → Variables.');
 }
 
-/** IP klien di belakang proxy Railway (alamat pertama di X-Forwarded-For). */
+/**
+ * IP klien.
+ * - PERCAYA_CLOUDFLARE=1 (hanya bila aplikasi diakses lewat domain yang di-proxy Cloudflare): CF-Connecting-IP.
+ * - Selain itu: X-Real-IP yang diisi oleh edge Railway (tidak bisa dipalsukan pengunjung),
+ *   lalu alamat pertama X-Forwarded-For sebagai cadangan (mis. saat dijalankan di komputer sendiri).
+ */
+const PERCAYA_CLOUDFLARE = process.env.PERCAYA_CLOUDFLARE === '1';
 export function ipKlien(c: Context): string {
-  return (c.req.header('x-forwarded-for') ?? '').split(',')[0].trim().slice(0, 64) || 'lokal';
+  const ip = (PERCAYA_CLOUDFLARE && c.req.header('cf-connecting-ip'))
+    || c.req.header('x-real-ip')
+    || (c.req.header('x-forwarded-for') ?? '').split(',')[0];
+  return (ip ?? '').trim().slice(0, 64) || 'lokal';
 }
 
 /** true bila token sah untuk aksi ini. Gagal menghubungi Cloudflare = ditolak (fail-closed). */

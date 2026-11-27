@@ -3,14 +3,14 @@ import { useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  AlertOctagon, Building2, Copy, DatabaseBackup, Download, FileText, Hash, History, KeyRound, ListChecks, Pencil, Plus, RotateCcw, Scale, Trash2, Upload, UserCog, X,
+  AlertOctagon, Building2, Check, Copy, Link2, MessageCircle, ShieldCheck, DatabaseBackup, Download, FileText, Hash, History, KeyRound, ListChecks, Pencil, Plus, RotateCcw, Scale, Trash2, Upload, UserCog, X,
 } from 'lucide-react';
 import { api, kirimFile, queryClient, segarkan, unduhFile } from '../lib/api';
 import type { Pengaturan, Pengguna } from '../lib/types';
 import { useAksi, usePengaturan, useSaya } from '../lib/hooks';
 import { useUmpan } from '../components/umpan';
 import { Pilihan } from '../components/pemilih';
-import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Kotak, Lencana, Masukan, MasukanRupiah, Memuat, Tombol, TombolIkon, cx, pegas } from '../components/ui';
+import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Kotak, Lencana, Masukan, MasukanRupiah, Memuat, Saklar, Tombol, TombolIkon, cx, pegas } from '../components/ui';
 import { rupiah, tanggal } from '../lib/format';
 
 const TAB = [
@@ -53,7 +53,7 @@ export function HalamanPengaturan() {
             {tab === 'batas' && <TabBatas admin={admin} />}
             {tab === 'daftar' && <TabDaftar />}
             {tab === 'template' && <TabTemplate admin={admin} />}
-            {tab === 'pengguna' && <TabPengguna saya={saya?.pengguna?.id} />}
+            {tab === 'pengguna' && <div className="space-y-5"><TabPengguna saya={saya?.pengguna?.id} /><PanelUndangan /><PanelKeamananAkses /></div>}
             {tab === 'cadangan' && <TabCadangan />}
             {tab === 'reset' && <TabReset />}
             {tab === 'riwayat' && <TabRiwayat />}
@@ -357,7 +357,7 @@ function TabPengguna({ saya }: { saya?: number }) {
   const hapus = useAksi((u: Pengguna) => api.del(`/pengguna/${u.id}`), { sukses: 'Pengguna dihapus.' });
   const setujui = useAksi((u: Pengguna) => api.post(`/pengguna/${u.id}/setujui`), { sukses: (_, u) => `${u.nama} kini dapat masuk ke aplikasi.` });
   return (
-    <Panel judul="Pengguna aplikasi" ket={<><b>Admin</b> dapat mengubah semua pengaturan. <b>Operator</b> dapat mengelola mitra, kegiatan, honor, dan dokumen. Orang yang mendaftar dari halaman masuk baru bisa masuk setelah Anda setujui di sini.</>}>
+    <Panel judul="Pengguna aplikasi" ket={<><b>Admin</b> dapat mengubah semua pengaturan. <b>Operator</b> dapat mengelola mitra, kegiatan, honor, dan dokumen. Cara termudah menambah pengguna: buat <b>tautan undangan</b> di bawah lalu kirim lewat WhatsApp.</>}>
       <div className="mb-4 flex justify-end"><Tombol kecil ikon={<Plus className="size-4" />} onClick={() => setForm({ peran: 'operator' })}>Tambah pengguna</Tombol></div>
       <ul className="divide-y divide-stone-100">
         {data?.map((u) => (
@@ -387,6 +387,93 @@ function TabPengguna({ saya }: { saya?: number }) {
           </div>
         )}
       </Jendela>
+    </Panel>
+  );
+}
+
+/* ---------------------------- Undangan pendaftaran ---------------------------- */
+type Undangan = { id: number; peran: string; untuk: string | null; dibuat_oleh: string; dibuat: string; kedaluwarsa: string };
+
+function PanelUndangan() {
+  const { data } = useQuery({ queryKey: ['undangan'], queryFn: () => api.get<Undangan[]>('/undangan') });
+  const [buka, setBuka] = useState(false);
+  const [isian, setIsian] = useState({ untuk: '', peran: 'operator' });
+  const [tautan, setTautan] = useState('');
+  const [tersalin, setTersalin] = useState(false);
+  const { beritahu, konfirmasi } = useUmpan();
+  const buat = useAksi(() => api.post<{ token: string }>('/undangan', isian), {
+    setelah: (r) => setTautan(`${window.location.origin}/?undangan=${r.token}`),
+  });
+  const batalkan = useAksi((u: Undangan) => api.del(`/undangan/${u.id}`), { sukses: 'Undangan dibatalkan.' });
+  const tutup = () => { setBuka(false); setTautan(''); setTersalin(false); setIsian({ untuk: '', peran: 'operator' }); };
+  const salin = async () => {
+    try { await navigator.clipboard.writeText(tautan); setTersalin(true); beritahu('sukses', 'Tautan disalin.'); }
+    catch { beritahu('galat', 'Tidak bisa menyalin otomatis. Tekan lama pada tautan lalu pilih Salin.'); }
+  };
+  const pesanWa = `Halo${isian.untuk ? ' ' + isian.untuk : ''}, berikut tautan untuk membuat akun Seemitra Lite (berlaku 72 jam, hanya bisa dipakai sekali):\n${tautan}`;
+  const sisa = (k: string) => {
+    const jam = Math.max(0, Math.round((new Date(k.replace(' ', 'T')).getTime() - Date.now()) / 3600e3));
+    return jam >= 24 ? `${Math.floor(jam / 24)} hari ${jam % 24} jam` : `${jam} jam`;
+  };
+  return (
+    <Panel judul="Undang pengguna baru" ket="Buat tautan undangan, lalu kirim ke orang yang ingin ditambahkan. Ia membuat username & kata sandinya sendiri, dan akunnya langsung aktif. Tautan hanya bisa dipakai sekali dan berlaku 72 jam."
+      kaki={<Tombol ikon={<Link2 className="size-4" />} onClick={() => setBuka(true)}>Buat tautan undangan</Tombol>}>
+      {!data?.length ? <p className="text-sm text-stone-400">Tidak ada undangan yang masih berlaku.</p> : (
+        <ul className="divide-y divide-stone-100">
+          {data.map((u) => (
+            <li key={u.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
+              <Link2 className="size-4 text-brand-600" />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-stone-800">{u.untuk || 'Tanpa nama'} <Lencana warna={u.peran === 'admin' ? 'brand' : 'abu'}>{u.peran}</Lencana></div>
+                <div className="text-xs text-stone-400">dibuat {u.dibuat_oleh} · berlaku {sisa(u.kedaluwarsa)} lagi</div>
+              </div>
+              <Tombol kecil varian="hantu" onClick={async () => (await konfirmasi({ judul: 'Batalkan undangan ini?', pesan: 'Tautan tidak bisa dipakai lagi.', tombol: 'Batalkan', bahaya: true })) && batalkan.mutate(u)}>Batalkan</Tombol>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Jendela buka={buka} tutup={tutup} judul={tautan ? 'Tautan undangan siap' : 'Buat tautan undangan'}
+        kaki={tautan ? <Tombol onClick={tutup}>Selesai</Tombol> : <><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol memuat={buat.isPending} onClick={() => buat.mutate(undefined)}>Buat tautan</Tombol></>}>
+        {tautan ? (
+          <div className="space-y-4">
+            <p className="text-sm text-stone-600">Kirim tautan ini ke <b>{isian.untuk || 'pengguna baru'}</b>. Tautan hanya ditampilkan <b>sekali ini</b>, jadi salin atau kirim sekarang.</p>
+            <div className="break-all rounded-xl bg-stone-50 p-3 font-mono text-xs text-stone-700">{tautan}</div>
+            <div className="flex flex-wrap gap-2">
+              <Tombol varian="kedua" ikon={tersalin ? <Check className="size-4" /> : <Copy className="size-4" />} onClick={salin}>{tersalin ? 'Tersalin' : 'Salin tautan'}</Tombol>
+              <a href={`https://wa.me/?text=${encodeURIComponent(pesanWa)}`} target="_blank" rel="noreferrer"><Tombol ikon={<MessageCircle className="size-4" />}>Kirim lewat WhatsApp</Tombol></a>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Kolom label="Untuk siapa?" petunjuk="Opsional — nama ini otomatis terisi di formulir pendaftaran."><Masukan value={isian.untuk} onChange={(e) => setIsian({ ...isian, untuk: e.target.value })} placeholder="mis. Siti Harahap" /></Kolom>
+            <Kolom label="Peran"><Pilihan nilai={isian.peran} ubah={(v) => setIsian({ ...isian, peran: v })} opsi={[{ nilai: 'operator', label: 'Operator — mengelola mitra, kegiatan, honor, dokumen' }, { nilai: 'admin', label: 'Admin — semua akses termasuk pengaturan' }]} /></Kolom>
+          </div>
+        )}
+      </Jendela>
+    </Panel>
+  );
+}
+
+function PanelKeamananAkses() {
+  const { data, f, setF, simpan } = useFormPengaturan();
+  if (!data) return null;
+  return (
+    <Panel judul="Keamanan akses" ket="Pengaturan untuk mencegah orang asing masuk dan mendeteksi pengambilan data yang tidak wajar."
+      kaki={<Tombol memuat={simpan.isPending} onClick={() => simpan.mutate({ pendaftaran_terbuka: f.pendaftaran_terbuka, batas_ekspor_harian: f.batas_ekspor_harian })}>Simpan</Tombol>}>
+      <div className="space-y-5">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-brand-600" />
+          <div className="flex-1">
+            <Saklar aktif={!!f.pendaftaran_terbuka} ubah={(v) => setF({ ...f, pendaftaran_terbuka: v })} label={<span className="text-sm font-semibold text-stone-800">Izinkan pendaftaran tanpa undangan</span>} />
+            <p className="mt-1 text-xs text-stone-500">{f.pendaftaran_terbuka
+              ? 'Siapa pun yang membuka aplikasi bisa mendaftar, lalu menunggu persetujuan Anda. Disarankan dimatikan.'
+              : 'Mati (disarankan): akun baru hanya bisa dibuat lewat tautan undangan.'}</p>
+          </div>
+        </div>
+        <Kolom label="Batas wajar ekspor per pengguna per hari" petunjuk="Bila seseorang mengekspor Excel atau membuat SPK/BAST lebih dari ini dalam sehari, Beranda admin menampilkan peringatan." className="max-w-sm">
+          <Masukan type="number" min={1} max={1000} value={f.batas_ekspor_harian ?? 10} onChange={(e) => setF({ ...f, batas_ekspor_harian: Number(e.target.value) })} />
+        </Kolom>
+      </div>
     </Panel>
   );
 }

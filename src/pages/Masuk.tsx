@@ -1,6 +1,6 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Eye, EyeOff, Hourglass, LogIn, Sparkles, UserPlus } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Hourglass, LogIn, MailOpen, Sparkles, UserPlus } from 'lucide-react';
 import { api, queryClient } from '../lib/api';
 import { Kolom, Masukan, Tombol, cx } from '../components/ui';
 import { Turnstile, type PeganganTurnstile } from '../components/Turnstile';
@@ -14,13 +14,25 @@ type Mode = 'masuk' | 'daftar' | 'terkirim';
  * - Pendaftar pertama (saat aplikasi masih kosong) otomatis menjadi admin.
  * - Pendaftar berikutnya menunggu persetujuan admin.
  */
+/** Token undangan dari tautan admin: https://alamat-aplikasi/?undangan=xxxx */
+const tokenUndangan = new URLSearchParams(window.location.search).get('undangan') ?? '';
+
 export function Masuk({ setup }: { setup: boolean }) {
-  const [mode, setMode] = useState<Mode>('masuk');
+  const [mode, setMode] = useState<Mode>(tokenUndangan ? 'daftar' : 'masuk');
+  const [undangan, setUndangan] = useState<{ sah: boolean; peran?: string; untuk?: string | null } | null>(null);
+  useEffect(() => {
+    if (!tokenUndangan) return;
+    api.get<{ sah: boolean; peran?: string; untuk?: string | null }>(`/auth/undangan/${encodeURIComponent(tokenUndangan)}`)
+      .then((u) => { setUndangan(u); if (!u.sah) setMode('masuk'); if (u.untuk) setF((x) => ({ ...x, nama: x.nama || (u.untuk ?? '') })); })
+      .catch(() => { setUndangan({ sah: false }); setMode('masuk'); });
+  }, []);
   const [f, setF] = useState({ nama: '', username: '', sandi: '', ulang: '', kode: '' });
   // pemeriksaan keamanan (Turnstile) — hanya aktif bila diatur di server
   const saya = useSaya().data;
   const kunciSitus = saya?.turnstile ?? null;
   const perluKode = Boolean(saya?.perluKodeSetup);
+  // pendaftaran umum ditutup (bawaan): tombol daftar hanya muncul bila ada undangan sah / aplikasi masih kosong
+  const bolehDaftar = setup || Boolean(saya?.pendaftaranTerbuka) || Boolean(undangan?.sah);
   const [token, setToken] = useState('');
   const captcha = useRef<PeganganTurnstile>(null);
   const [lihat, setLihat] = useState(false);
@@ -40,8 +52,11 @@ export function Masuk({ setup }: { setup: boolean }) {
         await api.post('/auth/masuk', { username: f.username, sandi: f.sandi, turnstile: token });
         await queryClient.invalidateQueries({ queryKey: ['saya'] });
       } else {
-        const r = await api.post<{ ok: boolean; masuk: boolean }>('/auth/daftar', { nama: f.nama, username: f.username, sandi: f.sandi, turnstile: token, kode_setup: f.kode });
-        if (r.masuk) await queryClient.invalidateQueries({ queryKey: ['saya'] });
+        const r = await api.post<{ ok: boolean; masuk: boolean }>('/auth/daftar', { nama: f.nama, username: f.username, sandi: f.sandi, turnstile: token, kode_setup: f.kode, undangan: tokenUndangan || undefined });
+        if (r.masuk) {
+          if (tokenUndangan) window.history.replaceState(null, '', '/');
+          await queryClient.invalidateQueries({ queryKey: ['saya'] });
+        }
         else ganti('terkirim');
       }
     } catch (err) {
@@ -91,8 +106,20 @@ export function Masuk({ setup }: { setup: boolean }) {
               transition={{ duration: goyang ? 0.4 : 0.25 }} onSubmit={kirim} className="space-y-4">
               <div className="mb-1">
                 <h2 className="text-xl font-bold text-stone-900">{mode === 'masuk' ? 'Masuk' : 'Daftar akun baru'}</h2>
-                <p className="text-sm text-stone-500">{mode === 'masuk' ? 'Gunakan username dan kata sandi Anda.' : setup ? 'Akun pertama otomatis menjadi admin.' : 'Akun baru aktif setelah disetujui admin.'}</p>
+                <p className="text-sm text-stone-500">{mode === 'masuk' ? 'Gunakan username dan kata sandi Anda.' : setup ? 'Akun pertama otomatis menjadi admin.' : undangan?.sah ? 'Akun langsung aktif setelah dibuat.' : 'Akun baru aktif setelah disetujui admin.'}</p>
               </div>
+
+              {mode === 'daftar' && !setup && undangan?.sah && (
+                <div className="flex gap-3 rounded-2xl bg-brand-50 p-4 text-sm text-brand-800">
+                  <MailOpen className="size-5 shrink-0" />
+                  <p>Anda diundang sebagai <b>{undangan.peran === 'admin' ? 'Admin' : 'Operator'}</b>. Buat username dan kata sandi Anda sendiri di bawah ini.</p>
+                </div>
+              )}
+              {tokenUndangan && undangan && !undangan.sah && (
+                <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-800">
+                  Tautan undangan ini <b>tidak berlaku lagi</b> (sudah dipakai, dibatalkan, atau lewat 72 jam). Minta tautan baru kepada admin.
+                </div>
+              )}
 
               {setup && mode === 'masuk' && (
                 <div className="flex gap-3 rounded-2xl bg-brand-50 p-4 text-sm text-brand-800">
@@ -127,7 +154,9 @@ export function Masuk({ setup }: { setup: boolean }) {
 
               <p className={cx('pt-1 text-center text-sm text-stone-500')}>
                 {mode === 'masuk'
-                  ? <>Belum punya akun? <button type="button" onClick={() => ganti('daftar')} className="font-bold text-brand-700 hover:underline">Daftar di sini</button></>
+                  ? bolehDaftar
+                    ? <>Belum punya akun? <button type="button" onClick={() => ganti('daftar')} className="font-bold text-brand-700 hover:underline">Daftar di sini</button></>
+                    : <>Belum punya akun? Minta <b>tautan undangan</b> kepada admin aplikasi.</>
                   : <>Sudah punya akun? <button type="button" onClick={() => ganti('masuk')} className="font-bold text-brand-700 hover:underline">Masuk</button></>}
               </p>
             </motion.form>

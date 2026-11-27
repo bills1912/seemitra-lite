@@ -78,12 +78,20 @@ Buka layanan **seemitra-lite** → tab **Variables**, lalu isi:
 | `SESSION_SECRET` | teks acak 64 karakter (buat di [it-tools.tech/token-generator](https://it-tools.tech/token-generator) atau `openssl rand -hex 32`) | **Wajib.** Kunci tanda tangan login. Mengganti nilainya = semua orang otomatis keluar (lakukan bila curiga ada kebocoran). |
 | `TURNSTILE_SITE_KEY` dan `TURNSTILE_SECRET_KEY` | dari Cloudflare → Turnstile → *Add widget* (mode **Managed**, hostname = alamat aplikasi) | Pemeriksaan anti-bot di halaman masuk & daftar. Biasanya berjalan otomatis tanpa diklik. |
 | `SETUP_TOKEN` | kode bebas | Opsional. Hanya dipakai saat aplikasi masih kosong: pendaftar pertama (admin) wajib memasukkan kode ini. |
+| `PERCAYA_CLOUDFLARE` | `1` | **Hanya** bila aplikasi dibuka lewat domain sendiri yang di-proxy Cloudflare (lihat di bawah). Jangan diisi bila memakai alamat `*.up.railway.app`. |
 
 Setelah mengubah Variables, Railway menjalankan ulang aplikasi otomatis. Hal-hal lain yang sudah aktif tanpa pengaturan:
 - Salah kata sandi 5× → akun dikunci 5 menit; 20× dari satu jaringan → jaringan itu dikunci 15 menit.
 - **Keluar** dari aplikasi = keluar dari semua perangkat. **Ganti kata sandi** = perangkat lain otomatis keluar.
 - Ganti kata sandi wajib mengisi kata sandi saat ini.
 - File cadangan tidak berisi kunci login.
+- **Akun baru hanya lewat tautan undangan** (Pengaturan → Pengguna → *Buat tautan undangan* → kirim lewat WhatsApp). Tautan berlaku 72 jam dan sekali pakai. Pendaftaran umum bisa dibuka di panel *Keamanan akses* (tidak disarankan).
+- **NIK & nomor rekening tampil tersamar** (mis. `1278••••••••0012`). Klik *Tampilkan NIK & rekening lengkap* di detail mitra bila perlu — setiap akses tercatat di riwayat. Ekspor Excel oleh operator juga tersamar; ekspor admin tetap lengkap. SPK/BAST selalu memakai data asli.
+- Pengambilan data dibatasi per pengguna: ekspor Excel 10×/jam, pembuatan SPK/BAST 30×/jam, muat daftar mitra 60×/menit. Bila ada yang mengekspor melebihi batas wajar harian (bawaan 10×, bisa diubah di *Keamanan akses*), Beranda admin menampilkan peringatan.
+- Aplikasi tidak diindeks mesin pencari (Google dsb.).
+
+#### (Opsional) Memasang Cloudflare di depan aplikasi
+Butuh domain sendiri (mis. `seemitra.bpspaluta.id`). Tambahkan domain itu di Cloudflare (ikon awan oranye = *Proxied*), arahkan ke Railway (*Settings → Networking → Custom Domain*), lalu di Cloudflare: aktifkan **Security → Bots → Bot Fight Mode**, dan buat aturan **Security → WAF → Rate limiting**: jalur `/api/auth/` maksimal 10 permintaan per menit per IP. Setelah itu isi `PERCAYA_CLOUDFLARE=1` di Railway dan tambahkan domain baru ke widget Turnstile.
 
 ### Jika aplikasi tidak bisa dibuka
 1. Masuk ke [railway.com](https://railway.com) → buka proyek **seemitra-lite** → layanan **seemitra-lite**.
