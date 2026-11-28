@@ -1,11 +1,12 @@
 /** Tata letak utama: menu samping, bilah atas, dan pencarian cepat (Ctrl+K). */
 import { Kredit } from './Kredit';
+import { BookOpenText, CalendarDots, Coins, GearSix, House, Signature, UsersThree } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  BookOpen, CalendarDays, ChevronsLeft, CornerDownLeft, FileSignature, Home, LogOut, Menu, Plus, Search, Settings, Users, Wallet, X,
+  CalendarDays, ChevronsLeft, CornerDownLeft, LogOut, Menu, Plus, Search, Users, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Pengguna } from '../lib/types';
@@ -30,13 +31,13 @@ function Tip({ label, aktif = true, children }: { label: string; aktif?: boolean
 }
 
 export const MENU = [
-  { ke: '/', label: 'Beranda', ikon: Home },
-  { ke: '/mitra', label: 'Mitra', ikon: Users },
-  { ke: '/kegiatan', label: 'Kegiatan', ikon: CalendarDays },
-  { ke: '/rekap', label: 'Rekap Honor', ikon: Wallet },
-  { ke: '/dokumen', label: 'SPK & BAST', ikon: FileSignature },
-  { ke: '/pengaturan', label: 'Pengaturan', ikon: Settings },
-  { ke: '/panduan', label: 'Panduan', ikon: BookOpen },
+  { ke: '/', label: 'Beranda', ikon: House },
+  { ke: '/mitra', label: 'Mitra', ikon: UsersThree },
+  { ke: '/kegiatan', label: 'Kegiatan', ikon: CalendarDots },
+  { ke: '/rekap', label: 'Rekap Honor', ikon: Coins },
+  { ke: '/dokumen', label: 'SPK & BAST', ikon: Signature },
+  { ke: '/pengaturan', label: 'Pengaturan', ikon: GearSix },
+  { ke: '/panduan', label: 'Panduan', ikon: BookOpenText },
 ];
 
 export function Tata({ pengguna, children }: { pengguna: Pengguna; children: ReactNode }) {
@@ -97,7 +98,7 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
                 <span className={cx('relative flex items-center gap-3 rounded-xl py-2.5 text-[15px] font-semibold transition-colors', ringkas ? 'justify-center px-0' : 'px-3',
                   isActive ? 'text-brand-800' : 'text-stone-500 hover:bg-stone-100/70 hover:text-stone-800')}>
                   {isActive && <motion.span layoutId={ringkas ? 'menu-aktif-ringkas' : 'menu-aktif'} transition={pegas} className="absolute inset-0 rounded-xl bg-brand-100/70" />}
-                  <m.ikon className="relative size-[19px] shrink-0" strokeWidth={isActive ? 2.4 : 2} />
+                  <m.ikon className="relative size-5 shrink-0" weight={isActive ? 'duotone' : 'regular'} />
                   {!ringkas && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.06 }} className="relative whitespace-nowrap">{m.label}</motion.span>}
                 </span>
               )}
