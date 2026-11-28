@@ -26,7 +26,11 @@ async function minta<T>(metode: string, url: string, body?: unknown): Promise<T>
     try {
       pesan = (await res.json()).pesan ?? pesan;
     } catch { /* bukan JSON */ }
-    if (res.status === 401 && !url.startsWith('/auth')) queryClient.setQueryData(['saya'], { pengguna: null, perluSetup: false });
+    if (res.status === 401 && !url.startsWith('/auth')) {
+      // sesi berakhir: tampilkan halaman masuk, lalu ambil ulang konfigurasi masuk (kunci Turnstile dsb.) dari server
+      queryClient.setQueryData(['saya'], (lama: Record<string, unknown> | undefined) => ({ ...(lama ?? {}), pengguna: null, perluSetup: false }));
+      void queryClient.invalidateQueries({ queryKey: ['saya'] });
+    }
     throw new ApiError(pesan, res.status);
   }
   return res.json() as Promise<T>;

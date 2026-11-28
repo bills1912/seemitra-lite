@@ -10,7 +10,7 @@ import type { Pengaturan, Pengguna } from '../lib/types';
 import { useAksi, usePengaturan, useSaya } from '../lib/hooks';
 import { useUmpan } from '../components/umpan';
 import { Pilihan } from '../components/pemilih';
-import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Kotak, Lencana, Masukan, MasukanRupiah, Memuat, Saklar, Tombol, TombolIkon, cx, pegas } from '../components/ui';
+import { AreaUnggah, Avatar, Jendela, KepalaHalaman, Kartu, Kolom, Kotak, Lencana, Masukan, MasukanRupiah, Memuat, Paginasi, Saklar, Tombol, TombolIkon, cx, pegas } from '../components/ui';
 import { rupiah, tanggal } from '../lib/format';
 
 const TAB = [
@@ -418,6 +418,8 @@ function PanelUndangan() {
     setelah: (r) => setTautan(`${window.location.origin}/?undangan=${r.token}`),
   });
   const batalkan = useAksi((u: Undangan) => api.del(`/undangan/${u.id}`), { sukses: 'Undangan dibatalkan.' });
+  const batalSemua = useAksi(() => api.del<{ jumlah: number }>('/undangan'), { sukses: (r) => `${r.jumlah} undangan dibatalkan.` });
+  const [massal, setMassal] = useState(false);
   const tutup = () => { setBuka(false); setTautan(''); setTersalin(false); setIsian({ untuk: '', peran: 'operator' }); };
   const salin = async () => {
     try { await navigator.clipboard.writeText(tautan); setTersalin(true); beritahu('sukses', 'Tautan disalin.'); }
@@ -430,7 +432,11 @@ function PanelUndangan() {
   };
   return (
     <Panel judul="Undang pengguna baru" ket="Buat tautan undangan, lalu kirim ke orang yang ingin ditambahkan. Ia membuat username & kata sandinya sendiri, dan akunnya langsung aktif. Tautan hanya bisa dipakai sekali dan berlaku 72 jam."
-      kaki={<Tombol ikon={<Link2 className="size-4" />} onClick={() => setBuka(true)}>Buat tautan undangan</Tombol>}>
+      kaki={<>
+        {(data?.length ?? 0) > 1 && <Tombol varian="hantu" onClick={async () => (await konfirmasi({ judul: `Batalkan ${data!.length} undangan?`, pesan: 'Semua tautan yang belum dipakai tidak bisa dipakai lagi.', tombol: 'Batalkan semua', bahaya: true })) && batalSemua.mutate(undefined)}>Batalkan semua</Tombol>}
+        <Tombol varian="kedua" ikon={<Upload className="size-4" />} onClick={() => setMassal(true)}>Undang banyak (Excel)</Tombol>
+        <Tombol ikon={<Link2 className="size-4" />} onClick={() => setBuka(true)}>Buat tautan undangan</Tombol>
+      </>}>
       {!data?.length ? <p className="text-sm text-stone-400">Tidak ada undangan yang masih berlaku.</p> : (
         <ul className="divide-y divide-stone-100">
           {data.map((u) => (
@@ -445,6 +451,7 @@ function PanelUndangan() {
           ))}
         </ul>
       )}
+      <JendelaUndanganMassal buka={massal} tutup={() => setMassal(false)} />
       <Jendela buka={buka} tutup={tutup} judul={tautan ? 'Tautan undangan siap' : 'Buat tautan undangan'}
         kaki={tautan ? <Tombol onClick={tutup}>Selesai</Tombol> : <><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol memuat={buat.isPending} onClick={() => buat.mutate(undefined)}>Buat tautan</Tombol></>}>
         {tautan ? (
@@ -464,6 +471,74 @@ function PanelUndangan() {
         )}
       </Jendela>
     </Panel>
+  );
+}
+
+type HasilMassal = { jumlah: number; kedaluwarsa: string; unduhan: string; daftar: { nama: string; peran: string; no_wa: string | null; token: string }[] };
+
+/** Undangan massal: unggah daftar pegawai (Nama, Peran, No WA) → tautan untuk setiap orang. */
+function JendelaUndanganMassal({ buka, tutup }: { buka: boolean; tutup: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [hasil, setHasil] = useState<HasilMassal | null>(null);
+  const [sudahUnduh, setSudahUnduh] = useState(false);
+  const [halaman, setHalaman] = useState(1);
+  const { beritahu, konfirmasi } = useUmpan();
+  useEffect(() => { if (buka) { setFile(null); setHasil(null); setSudahUnduh(false); setHalaman(1); } }, [buka]);
+  const unggah = useAksi(() => kirimFile<HasilMassal>('/undangan/massal', file!, { alamat: window.location.origin }), {
+    setelah: (r) => { setHasil(r); segarkan(); },
+  });
+  const tautanDari = (t: string) => `${window.location.origin}/?undangan=${t}`;
+  const pesanWa = (nama: string, t: string) => `Halo ${nama}, berikut tautan untuk membuat akun Seemitra Lite (berlaku 72 jam, hanya bisa dipakai sekali):\n${tautanDari(t)}`;
+  const unduhDaftar = () => {
+    if (!hasil) return;
+    const a = document.createElement('a'); a.href = hasil.unduhan; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
+    setSudahUnduh(true);
+  };
+  const salin = async (t: string) => {
+    try { await navigator.clipboard.writeText(t); beritahu('sukses', 'Tautan disalin.'); }
+    catch { beritahu('galat', 'Tidak bisa menyalin otomatis.'); }
+  };
+  const tutupAman = async () => {
+    if (hasil && !sudahUnduh && !(await konfirmasi({ judul: 'Tutup tanpa mengunduh daftar tautan?', pesan: 'Tautan hanya ditampilkan sekali. Setelah ditutup, tautan tidak bisa dilihat lagi (harus dibuat ulang).', tombol: 'Tutup saja', bahaya: true }))) return;
+    tutup();
+  };
+  const PER = 8;
+  const tampil = hasil?.daftar.slice((halaman - 1) * PER, halaman * PER) ?? [];
+  return (
+    <Jendela buka={buka} tutup={tutupAman} lebar="max-w-3xl" judul={hasil ? `${hasil.jumlah} tautan undangan siap` : 'Undang banyak pegawai sekaligus'}
+      kaki={hasil
+        ? <><Tombol varian="kedua" ikon={<Download className="size-4" />} onClick={unduhDaftar}>Unduh daftar tautan (Excel)</Tombol><Tombol onClick={tutupAman}>Selesai</Tombol></>
+        : <><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol disabled={!file} memuat={unggah.isPending} ikon={<Upload className="size-4" />} onClick={() => unggah.mutate(undefined)}>Buat tautan</Tombol></>}>
+      {!hasil ? (
+        <div className="space-y-4">
+          <ol className="space-y-1.5 text-sm text-stone-600">
+            <li>1. Unduh <button type="button" onClick={() => unduhFile('/undangan/contoh').catch((e) => beritahu('galat', (e as Error).message))} className="font-semibold text-brand-700 hover:underline">file contoh</button>, isi kolom <b>Nama</b>, <b>Peran</b> (<i>operator</i>, <i>pengamat</i>, atau <i>admin</i>; kosong = operator), dan <b>No WA</b> (opsional).</li>
+            <li>2. Unggah file di bawah (Excel .xlsx atau CSV, maksimal 200 nama).</li>
+            <li>3. Kirim tautan ke masing-masing orang lewat WhatsApp, atau unduh daftar tautannya.</li>
+          </ol>
+          <AreaUnggah terima=".xlsx,.csv" file={file} pilih={setFile} teks="Pilih file daftar pegawai" />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">Tautan hanya ditampilkan <b>sekali ini</b> dan berlaku sampai <b>{hasil.kedaluwarsa}</b>. Kirim sekarang atau <b>unduh daftar tautan</b> untuk disimpan sementara (rahasiakan — siapa pun yang memegang tautan bisa membuat akun).</p>
+          <ul className="divide-y divide-stone-100 rounded-2xl border border-stone-200">
+            {tampil.map((d) => (
+              <li key={d.token} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold text-stone-800">{d.nama}</div>
+                  <div className="text-xs text-stone-400">{d.peran}{d.no_wa ? ` · +${d.no_wa}` : ''}</div>
+                </div>
+                <Tombol kecil varian="hantu" ikon={<Copy className="size-3.5" />} onClick={() => salin(tautanDari(d.token))}>Salin</Tombol>
+                <a href={`https://wa.me/${d.no_wa ?? ''}?text=${encodeURIComponent(pesanWa(d.nama, d.token))}`} target="_blank" rel="noreferrer">
+                  <Tombol kecil varian="kedua" ikon={<MessageCircle className="size-3.5" />}>WhatsApp</Tombol>
+                </a>
+              </li>
+            ))}
+          </ul>
+          <Paginasi halaman={halaman} total={hasil.daftar.length} perHalaman={PER} ubah={setHalaman} />
+        </div>
+      )}
+    </Jendela>
   );
 }
 

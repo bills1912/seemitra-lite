@@ -29,7 +29,11 @@ export function Masuk({ setup }: { setup: boolean }) {
   }, []);
   const [f, setF] = useState({ nama: '', username: '', sandi: '', ulang: '', kode: '' });
   // pemeriksaan keamanan (Turnstile) — hanya aktif bila diatur di server
-  const saya = useSaya().data;
+  const qSaya = useSaya();
+  const saya = qSaya.data;
+  // konfigurasi selalu diambil segar saat halaman masuk tampil (mis. setelah sesi berakhir otomatis)
+  useEffect(() => { void queryClient.invalidateQueries({ queryKey: ['saya'] }); }, []);
+  const konfigSiap = saya !== undefined && 'turnstile' in saya && !qSaya.isFetching;
   const kunciSitus = saya?.turnstile ?? null;
   const perluKode = Boolean(saya?.perluKodeSetup);
   // pendaftaran umum ditutup (bawaan): tombol daftar hanya muncul bila ada undangan sah / aplikasi masih kosong
@@ -161,12 +165,12 @@ export function Masuk({ setup }: { setup: boolean }) {
               )}
 
               </>}
-              {kunciSitus && mode !== 'kode' && <Turnstile ref={captcha} kunciSitus={kunciSitus} aksi={mode === 'daftar' ? 'daftar' : 'masuk'} onToken={setToken} />}
+              {konfigSiap && kunciSitus && mode !== 'kode' && <Turnstile ref={captcha} kunciSitus={kunciSitus} aksi={mode === 'daftar' ? 'daftar' : 'masuk'} onToken={setToken} />}
 
               {galat && <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{galat}</motion.p>}
 
-              <Tombol type="submit" memuat={memuat} disabled={mode === 'kode' ? kode.length !== 6 : Boolean(kunciSitus) && !token} ikon={mode === 'masuk' ? <LogIn className="size-4" /> : <UserPlus className="size-4" />} className="h-11 w-full text-[15px]">
-                {mode === 'kode' ? 'Lanjutkan' : kunciSitus && !token ? 'Tunggu pemeriksaan keamanan…' : mode === 'masuk' ? 'Masuk' : 'Daftar'}
+              <Tombol type="submit" memuat={memuat} disabled={mode === 'kode' ? kode.length !== 6 : !konfigSiap || (Boolean(kunciSitus) && !token)} ikon={mode === 'masuk' ? <LogIn className="size-4" /> : <UserPlus className="size-4" />} className="h-11 w-full text-[15px]">
+                {mode === 'kode' ? 'Lanjutkan' : !konfigSiap || (kunciSitus && !token) ? 'Tunggu pemeriksaan keamanan…' : mode === 'masuk' ? 'Masuk' : 'Daftar'}
               </Tombol>
 
               <p className={cx('pt-1 text-center text-sm text-stone-500')}>

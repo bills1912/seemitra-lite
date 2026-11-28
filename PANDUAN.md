@@ -88,7 +88,7 @@ Setelah mengubah Variables, Railway menjalankan ulang aplikasi otomatis. Hal-hal
 - **Keluar** dari aplikasi = keluar dari semua perangkat. **Ganti kata sandi** = perangkat lain otomatis keluar.
 - Ganti kata sandi wajib mengisi kata sandi saat ini.
 - File cadangan tidak berisi kunci login.
-- **Akun baru hanya lewat tautan undangan** (Pengaturan → Pengguna → *Buat tautan undangan* → kirim lewat WhatsApp). Tautan berlaku 72 jam dan sekali pakai. Pendaftaran umum bisa dibuka di panel *Keamanan akses* (tidak disarankan).
+- **Akun baru hanya lewat tautan undangan** (Pengaturan → Pengguna → *Buat tautan undangan* → kirim lewat WhatsApp). Tautan berlaku 72 jam dan sekali pakai. Untuk banyak orang sekaligus: **Undang banyak (Excel)** → unduh file contoh, isi Nama / Peran / No WA, unggah → kirim tautan per orang lewat tombol WhatsApp atau unduh daftar tautannya (maks. 200 nama per unggahan). Pendaftaran umum bisa dibuka di panel *Keamanan akses* (tidak disarankan).
 - **NIK & nomor rekening tampil tersamar** (mis. `1278••••••••0012`). Klik *Tampilkan NIK & rekening lengkap* di detail mitra bila perlu — setiap akses tercatat di riwayat. Ekspor Excel oleh operator juga tersamar; ekspor admin tetap lengkap. SPK/BAST selalu memakai data asli.
 - Pengambilan data dibatasi per pengguna: ekspor Excel 10×/jam, pembuatan SPK/BAST 30×/jam, muat daftar mitra 60×/menit. Bila ada yang mengekspor melebihi batas wajar harian (bawaan 10×, bisa diubah di *Keamanan akses*), Beranda admin menampilkan peringatan.
 - Aplikasi tidak diindeks mesin pencari (Google dsb.).

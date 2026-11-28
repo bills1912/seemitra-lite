@@ -827,6 +827,14 @@ const bersihkanUnduhan = () => {
   for (const [k, v] of unduhanSementara) if (v.sampai < sekarang) unduhanSementara.delete(k);
 };
 
+/** Menyimpan file sementara dan mengembalikan alamat unduhannya (sekali pakai, hanya untuk pengguna ini). */
+export function siapkanUnduhan(c: Context, buf: Uint8Array, nama: string, tipe = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+  bersihkanUnduhan();
+  const token = crypto.randomBytes(24).toString('hex');
+  unduhanSementara.set(token, { buf, nama, tipe, sampai: Date.now() + MASA_SIMPAN_UNDUHAN, pengguna: c.get('pengguna')?.id ?? 0, dipakai: false });
+  return `/api/unduh/${token}/${encodeURIComponent(nama)}`;
+}
+
 export function unduh(c: Context, buf: Uint8Array, nama: string, tipe?: string) {
   const jenis = tipe ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   if (c.req.header('x-siapkan') === '1') {

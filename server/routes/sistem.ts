@@ -10,7 +10,8 @@ import { cekSandiBaru } from '../sandi.ts';
 import { bacaSesi } from '../auth.ts';
 import { wajibAdmin, hashSandi, cocokSandi, cabutSemuaSesi, buatSesi, type Env } from '../auth.ts';
 import { GagalError } from '../util.ts';
-import { unduh } from './data.ts';
+import { unduh, siapkanUnduhan } from './data.ts';
+import { bacaExcel, buatExcel } from '../excel.ts';
 import { fileTemplate, fileTemplateBawaan, JENIS_TEMPLATE, PENANDA, ujiTemplate, type JenisTemplate } from './dokumen.ts';
 
 export const sistem = new Hono<Env>();
@@ -156,13 +157,74 @@ sistem.post('/undangan', wajibAdmin, async (c) => {
   const peran = peranDari(b.peran);
   const untuk = typeof b.untuk === 'string' ? b.untuk.trim().slice(0, 100) || null : null;
   const aktif = (db.prepare("SELECT COUNT(*) n FROM undangan WHERE dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get() as { n: number }).n;
-  if (aktif >= 50) throw new GagalError('Terlalu banyak undangan aktif. Batalkan undangan yang tidak dipakai terlebih dahulu.');
+  if (aktif >= BATAS_UNDANGAN_AKTIF) throw new GagalError('Terlalu banyak undangan aktif. Batalkan undangan yang tidak dipakai terlebih dahulu.');
   const token = crypto.randomBytes(32).toString('base64url');
   db.prepare(`INSERT INTO undangan (hash_token, peran, untuk, dibuat_oleh, kedaluwarsa) VALUES (?, ?, ?, ?, datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours'))`)
     .run(hashToken(token), peran, untuk, c.get('pengguna').nama);
   catat(c.get('pengguna').nama, 'Buat undangan pendaftaran', `${peran}${untuk ? ` untuk ${untuk}` : ''}`);
   return c.json({ token, jam: MASA_UNDANGAN_JAM });
 });
+/* ---------- Undangan massal: unggah daftar pegawai (Excel/CSV) ---------- */
+const BATAS_UNDANGAN_AKTIF = 500;
+const MAKS_UNDANGAN_SEKALI = 200;
+const PETA_UNDANGAN: Record<string, string[]> = {
+  nama: ['nama', 'nama pegawai', 'nama lengkap'],
+  peran: ['peran', 'role', 'hak akses'],
+  no_wa: ['no wa', 'no whatsapp', 'whatsapp', 'no hp', 'nomor hp', 'hp', 'telepon'],
+};
+/** Nomor HP Indonesia → format internasional untuk tautan WhatsApp (0812… → 62812…) */
+const nomorWa = (v: unknown) => {
+  const d = String(v ?? '').replace(/\D/g, '');
+  if (d.length < 9 || d.length > 15) return null;
+  return d.startsWith('0') ? '62' + d.slice(1) : d.startsWith('8') ? '62' + d : d;
+};
+sistem.get('/undangan/contoh', wajibAdmin, async (c) => {
+  const buf = await buatExcel('Pegawai', [
+    { judul: 'Nama', kunci: 'nama', lebar: 30 }, { judul: 'Peran', kunci: 'peran', lebar: 14 }, { judul: 'No WA', kunci: 'no_wa', lebar: 18 },
+  ], [
+    { nama: 'Contoh Nama Pegawai', peran: 'operator', no_wa: '081234567890' },
+    { nama: 'Contoh Pimpinan', peran: 'pengamat', no_wa: '' },
+  ]);
+  return unduh(c, buf, 'Contoh Undangan Pegawai.xlsx');
+});
+sistem.post('/undangan/massal', wajibAdmin, async (c) => {
+  const body = await c.req.parseBody();
+  const file = body.file as File | undefined;
+  if (!file || typeof file === 'string') throw new GagalError('Pilih file Excel (.xlsx) atau CSV daftar pegawai.');
+  const alamat = typeof body.alamat === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(body.alamat) ? body.alamat : '';
+  const baris = (await bacaExcel(await file.arrayBuffer(), PETA_UNDANGAN, file.name))
+    .map((r) => ({ nama: String(r.nama ?? '').trim().slice(0, 100), peran: String(r.peran ?? '').trim().toLowerCase(), no_wa: nomorWa(r.no_wa) }))
+    .filter((r) => r.nama && !/^contoh /i.test(r.nama));
+  if (!baris.length) throw new GagalError('Tidak ada nama yang terbaca. Pastikan ada kolom "Nama" (lihat file contoh).');
+  if (baris.length > MAKS_UNDANGAN_SEKALI) throw new GagalError(`Maksimal ${MAKS_UNDANGAN_SEKALI} nama per unggahan. Bagi file menjadi beberapa bagian.`);
+  const aktif = (db.prepare("SELECT COUNT(*) n FROM undangan WHERE dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get() as { n: number }).n;
+  if (aktif + baris.length > BATAS_UNDANGAN_AKTIF) throw new GagalError(`Undangan aktif akan melebihi ${BATAS_UNDANGAN_AKTIF}. Batalkan undangan lama yang tidak dipakai terlebih dahulu.`);
+  const oleh = c.get('pengguna').nama;
+  const hasil = transaksi(() => {
+    const st = db.prepare(`INSERT INTO undangan (hash_token, peran, untuk, dibuat_oleh, kedaluwarsa) VALUES (?, ?, ?, ?, datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours'))`);
+    return baris.map((r) => {
+      const peran = peranDari(r.peran === 'admin' || r.peran === 'pengamat' ? r.peran : 'operator');
+      const token = crypto.randomBytes(32).toString('base64url');
+      st.run(hashToken(token), peran, r.nama, oleh);
+      return { nama: r.nama, peran, no_wa: r.no_wa, token };
+    });
+  });
+  const kedaluwarsa = (db.prepare(`SELECT datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours') k`).get() as { k: string }).k;
+  // file Excel berisi tautan — hanya bisa diunduh sekali ini (token asli tidak disimpan di server)
+  const buf = await buatExcel('Tautan undangan', [
+    { judul: 'Nama', kunci: 'nama', lebar: 30 }, { judul: 'Peran', kunci: 'peran', lebar: 12 }, { judul: 'No WA', kunci: 'no_wa', lebar: 16 },
+    { judul: 'Tautan undangan (sekali pakai)', kunci: 'tautan', lebar: 90 }, { judul: 'Berlaku sampai', kunci: 'sampai', lebar: 20 },
+  ], hasil.map((h) => ({ ...h, tautan: `${alamat}/?undangan=${h.token}`, sampai: kedaluwarsa })), `Tautan undangan Seemitra Lite — berlaku ${MASA_UNDANGAN_JAM} jam, rahasiakan`);
+  catat(oleh, 'Buat undangan massal', `${hasil.length} undangan (${file.name})`);
+  return c.json({ jumlah: hasil.length, kedaluwarsa, daftar: hasil, unduhan: siapkanUnduhan(c, buf, `Tautan Undangan ${new Date().toISOString().slice(0, 10)}.xlsx`) });
+});
+/** Membatalkan semua undangan yang belum dipakai sekaligus */
+sistem.delete('/undangan', wajibAdmin, (c) => {
+  const r = db.prepare('DELETE FROM undangan WHERE dipakai IS NULL').run();
+  catat(c.get('pengguna').nama, 'Batalkan semua undangan', `${r.changes} undangan`);
+  return c.json({ jumlah: r.changes });
+});
+
 sistem.delete('/undangan/:id', wajibAdmin, (c) => {
   db.prepare('DELETE FROM undangan WHERE id = ? AND dipakai IS NULL').run(Number(c.req.param('id')));
   catat(c.get('pengguna').nama, 'Batalkan undangan pendaftaran');
