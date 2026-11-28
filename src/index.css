@@ -37,7 +37,25 @@ body { @apply bg-kanvas text-stone-800 antialiased; }
     placeholder:text-stone-400 hover:border-stone-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-100 disabled:bg-stone-50;
 }
 }
-.scroll-tipis { scrollbar-width: thin; scrollbar-color: #d6d3d1 transparent; }
+.scroll-tipis::-webkit-scrollbar { width: 8px; height: 8px; }
+
+/* Scrollbar bertema: kaca pastel teal (Chrome, Edge, Safari) */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgb(125 216 199 / 0.55), rgb(69 191 171 / 0.55));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.35);
+}
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, rgb(69 191 171 / 0.8), rgb(34 163 145 / 0.8)); background-clip: padding-box; }
+::-webkit-scrollbar-thumb:active { background: linear-gradient(180deg, #22a391, #168376); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+/* Firefox (tidak mendukung gaya di atas): warna pastel padanan */
+@supports (-moz-appearance: none) {
+  * { scrollbar-width: thin; scrollbar-color: rgb(69 191 171 / 0.6) transparent; }
+}
 input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }
 
 /* Animasi masuk halaman. Memakai CSS (bukan JS) agar tidak pernah "tersangkut" transparan. */
