@@ -1,5 +1,6 @@
 /** Tata letak utama: menu samping, bilah atas, dan pencarian cepat (Ctrl+K). */
 import { Kredit } from './Kredit';
+import { Jam } from './Jam';
 import { BookOpenText, CalendarDots, Coins, GearSix, House, Signature, UsersThree } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router';
@@ -141,7 +142,8 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-stone-200/70 bg-kanvas/85 px-4 py-3 backdrop-blur lg:hidden">
         <button onClick={() => setLaci(true)} className="rounded-xl p-2 hover:bg-stone-200/60"><Menu className="size-5" /></button>
         <img src="/logo.svg" alt="" className="size-8" />
-        <span className="flex-1 font-extrabold">Seemitra <span className="text-brand-600">Lite</span></span>
+        <span className="min-w-0 flex-1 truncate font-extrabold"><span className="hidden min-[400px]:inline">Seemitra <span className="text-brand-600">Lite</span></span></span>
+        <Jam ringkas />
         <button onClick={() => setCari(true)} className="rounded-xl p-2 hover:bg-stone-200/60"><Search className="size-5" /></button>
       </header>
       <AnimatePresence>
@@ -158,7 +160,9 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
       </AnimatePresence>
 
       <main className="transition-[padding] duration-300 ease-out lg:pl-[var(--lebar-menu)]" style={{ '--lebar-menu': `${ringkas ? LEBAR_RINGKAS : LEBAR_PENUH}px` } as CSSProperties}>
-        <div className="mx-auto flex min-h-dvh max-w-7xl flex-col px-4 pb-5 pt-6 sm:px-6 lg:px-10 lg:pt-10">
+        <div className="mx-auto flex min-h-dvh max-w-7xl flex-col px-4 pb-5 pt-6 sm:px-6 lg:px-10 lg:pt-5">
+          {/* bilah atas (layar besar): jam waktu nyata */}
+          <div className="mb-3 hidden justify-end lg:flex"><Jam /></div>
           {/* Transisi halaman memakai animasi CSS (lihat .masuk-halaman di index.css):
               selalu selesai walau pengguna berpindah halaman dengan cepat. */}
           {pengguna.peran === 'pengamat' && (
