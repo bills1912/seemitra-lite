@@ -14,7 +14,8 @@ export function BilahPilihan({ aktif, jumlah, totalTampil, pilihSemua, kosongkan
   /** tombol tambahan (mis. Hapus penugasan) */
   aksiLain?: ReactNode;
 }) {
-  return createPortal(
+  // ruang kosong di akhir halaman selama bilah tampil, agar bilah tidak menutupi isi paling bawah
+  return <>{aktif && <div aria-hidden className="h-24" />}{createPortal(
     <AnimatePresence>
       {aktif && (
         <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }} transition={pegas}
@@ -34,7 +35,7 @@ export function BilahPilihan({ aktif, jumlah, totalTampil, pilihSemua, kosongkan
       )}
     </AnimatePresence>,
     document.body,
-  );
+  )}</>;
 }
 
 /** Popup persetujuan sebelum menghapus banyak data */
