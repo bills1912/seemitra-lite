@@ -7,9 +7,12 @@ export const queryClient = new QueryClient({
 
 export class ApiError extends Error {
   status: number;
-  constructor(pesan: string, status: number) {
+  /** isi lengkap balasan galat dari server (mis. daftar baris bermasalah) */
+  data: Record<string, unknown> | undefined;
+  constructor(pesan: string, status: number, data?: Record<string, unknown>) {
     super(pesan);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -23,15 +26,17 @@ async function minta<T>(metode: string, url: string, body?: unknown): Promise<T>
   });
   if (!res.ok) {
     let pesan = `Gagal (${res.status})`;
+    let data: Record<string, unknown> | undefined;
     try {
-      pesan = (await res.json()).pesan ?? pesan;
+      data = await res.json();
+      pesan = (data?.pesan as string) ?? pesan;
     } catch { /* bukan JSON */ }
     if (res.status === 401 && !url.startsWith('/auth')) {
       // sesi berakhir: tampilkan halaman masuk, lalu ambil ulang konfigurasi masuk (kunci Turnstile dsb.) dari server
       queryClient.setQueryData(['saya'], (lama: Record<string, unknown> | undefined) => ({ ...(lama ?? {}), pengguna: null, perluSetup: false }));
       void queryClient.invalidateQueries({ queryKey: ['saya'] });
     }
-    throw new ApiError(pesan, res.status);
+    throw new ApiError(pesan, res.status, data);
   }
   return res.json() as Promise<T>;
 }

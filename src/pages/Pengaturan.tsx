@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertOctagon, Building2, Check, Copy, Link2, MessageCircle, ShieldCheck, DatabaseBackup, Download, FileText, Hash, History, KeyRound, ListChecks, Pencil, Plus, RotateCcw, Scale, Trash2, Upload, UserCog, X,
 } from 'lucide-react';
-import { api, kirimFile, queryClient, segarkan, unduhFile } from '../lib/api';
+import { api, ApiError, kirimFile, queryClient, segarkan, unduhFile } from '../lib/api';
 import type { Pengaturan, Pengguna } from '../lib/types';
 import { useAksi, usePengaturan, useSaya } from '../lib/hooks';
 import { useUmpan } from '../components/umpan';
@@ -405,12 +405,12 @@ function TabPengguna({ saya }: { saya?: number }) {
 }
 
 /* ---------------------------- Undangan pendaftaran ---------------------------- */
-type Undangan = { id: number; peran: string; untuk: string | null; dibuat_oleh: string; dibuat: string; kedaluwarsa: string };
+type Undangan = { id: number; peran: string; untuk: string | null; username: string | null; dibuat_oleh: string; dibuat: string; kedaluwarsa: string };
 
 function PanelUndangan() {
   const { data } = useQuery({ queryKey: ['undangan'], queryFn: () => api.get<Undangan[]>('/undangan') });
   const [buka, setBuka] = useState(false);
-  const [isian, setIsian] = useState({ untuk: '', peran: 'operator' });
+  const [isian, setIsian] = useState({ untuk: '', username: '', peran: 'operator' });
   const [tautan, setTautan] = useState('');
   const [tersalin, setTersalin] = useState(false);
   const { beritahu, konfirmasi } = useUmpan();
@@ -420,7 +420,7 @@ function PanelUndangan() {
   const batalkan = useAksi((u: Undangan) => api.del(`/undangan/${u.id}`), { sukses: 'Undangan dibatalkan.' });
   const batalSemua = useAksi(() => api.del<{ jumlah: number }>('/undangan'), { sukses: (r) => `${r.jumlah} undangan dibatalkan.` });
   const [massal, setMassal] = useState(false);
-  const tutup = () => { setBuka(false); setTautan(''); setTersalin(false); setIsian({ untuk: '', peran: 'operator' }); };
+  const tutup = () => { setBuka(false); setTautan(''); setTersalin(false); setIsian({ untuk: '', username: '', peran: 'operator' }); };
   const salin = async () => {
     try { await navigator.clipboard.writeText(tautan); setTersalin(true); beritahu('sukses', 'Tautan disalin.'); }
     catch { beritahu('galat', 'Tidak bisa menyalin otomatis. Tekan lama pada tautan lalu pilih Salin.'); }
@@ -443,7 +443,7 @@ function PanelUndangan() {
             <li key={u.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
               <Link2 className="size-4 text-brand-600" />
               <div className="min-w-0 flex-1">
-                <div className="font-semibold text-stone-800">{u.untuk || 'Tanpa nama'} <Lencana warna={u.peran === 'admin' ? 'brand' : 'abu'}>{u.peran}</Lencana></div>
+                <div className="font-semibold text-stone-800">{u.untuk || 'Tanpa nama'} {u.username && <span className="font-mono text-xs font-normal text-stone-500">({u.username})</span>} <Lencana warna={u.peran === 'admin' ? 'brand' : 'abu'}>{u.peran}</Lencana></div>
                 <div className="text-xs text-stone-400">dibuat {u.dibuat_oleh} · berlaku {sisa(u.kedaluwarsa)} lagi</div>
               </div>
               <Tombol kecil varian="hantu" onClick={async () => (await konfirmasi({ judul: 'Batalkan undangan ini?', pesan: 'Tautan tidak bisa dipakai lagi.', tombol: 'Batalkan', bahaya: true })) && batalkan.mutate(u)}>Batalkan</Tombol>
@@ -466,6 +466,7 @@ function PanelUndangan() {
         ) : (
           <div className="space-y-4">
             <Kolom label="Untuk siapa?" petunjuk="Opsional — nama ini otomatis terisi di formulir pendaftaran."><Masukan value={isian.untuk} onChange={(e) => setIsian({ ...isian, untuk: e.target.value })} placeholder="mis. Siti Harahap" /></Kolom>
+            <Kolom label="Username" petunjuk="Opsional — bila diisi, penerima wajib memakai username ini untuk masuk."><Masukan value={isian.username} onChange={(e) => setIsian({ ...isian, username: e.target.value.replace(/\s/g, '') })} placeholder="mis. siti.harahap" className="font-mono" /></Kolom>
             <Kolom label="Peran"><Pilihan nilai={isian.peran} ubah={(v) => setIsian({ ...isian, peran: v })} opsi={OPSI_PERAN} /></Kolom>
           </div>
         )}
@@ -474,21 +475,75 @@ function PanelUndangan() {
   );
 }
 
-type HasilMassal = { jumlah: number; kedaluwarsa: string; unduhan: string; daftar: { nama: string; peran: string; no_wa: string | null; token: string }[] };
+type HasilMassal = { jumlah: number; kedaluwarsa: string; unduhan: string; daftar: { nama: string; username: string; peran: string; no_wa: string | null; token: string }[] };
+type KolomUndangan = 'nama' | 'username' | 'peran' | 'no_wa';
+type BarisPratinjau = { id: number; nama: string; username: string; peran: string; no_wa: string; masalah: Partial<Record<KolomUndangan, string>> };
+const POLA_USERNAME = /^[A-Za-z0-9._-]{3,30}$/;
+let nomorBaris = 0;
 
-/** Undangan massal: unggah daftar pegawai (Nama, Peran, No WA) → tautan untuk setiap orang. */
+/** Pemeriksaan cepat di browser (tanpa server): isian kosong, format username, username ganda. */
+function periksaKlien(daftar: BarisPratinjau[]) {
+  const hitung = new Map<string, number>();
+  for (const b of daftar) if (b.username) hitung.set(b.username.toLowerCase(), (hitung.get(b.username.toLowerCase()) ?? 0) + 1);
+  return new Map(daftar.map((b) => {
+    const m: Partial<Record<KolomUndangan, string>> = {};
+    if (!b.nama.trim()) m.nama = 'Nama wajib diisi.';
+    if (!b.username.trim()) m.username = 'Username wajib diisi.';
+    else if (!POLA_USERNAME.test(b.username.trim())) m.username = '3–30 karakter: huruf, angka, titik, _ atau - (tanpa spasi).';
+    else if ((hitung.get(b.username.trim().toLowerCase()) ?? 0) > 1) m.username = 'Username ganda di daftar ini.';
+    return [b.id, m];
+  }));
+}
+
+/** Undangan massal: unggah daftar pegawai → pratinjau yang bisa diedit → tautan untuk setiap orang. */
 function JendelaUndanganMassal({ buka, tutup }: { buka: boolean; tutup: () => void }) {
   const [file, setFile] = useState<File | null>(null);
+  const [daftar, setDaftar] = useState<BarisPratinjau[] | null>(null);
   const [hasil, setHasil] = useState<HasilMassal | null>(null);
   const [sudahUnduh, setSudahUnduh] = useState(false);
   const [halaman, setHalaman] = useState(1);
+  const [cari, setCari] = useState('');
+  const [hanyaMasalah, setHanyaMasalah] = useState(false);
+  const [memeriksa, setMemeriksa] = useState(false);
+  const [versi, setVersi] = useState(0);
   const { beritahu, konfirmasi } = useUmpan();
-  useEffect(() => { if (buka) { setFile(null); setHasil(null); setSudahUnduh(false); setHalaman(1); } }, [buka]);
-  const unggah = useAksi(() => kirimFile<HasilMassal>('/undangan/massal', file!, { alamat: window.location.origin }), {
-    setelah: (r) => { setHasil(r); segarkan(); },
+  useEffect(() => { if (buka) { setFile(null); setDaftar(null); setHasil(null); setSudahUnduh(false); setHalaman(1); setCari(''); setHanyaMasalah(false); } }, [buka]);
+  const keBaris = (rows: Omit<BarisPratinjau, 'id'>[]) => rows.map((r) => ({ ...r, no_wa: r.no_wa ?? '', id: ++nomorBaris }));
+
+  const pratinjau = useAksi(() => kirimFile<{ baris: Omit<BarisPratinjau, 'id'>[] }>('/undangan/massal/pratinjau', file!), {
+    setelah: (r) => { setDaftar(keBaris(r.baris)); setHalaman(1); },
   });
+  // pemeriksaan ke server (username sudah dipakai, dsb.) dijalankan 0,8 detik setelah berhenti mengedit
+  useEffect(() => {
+    if (!daftar || !versi) return;
+    const t = setTimeout(async () => {
+      setMemeriksa(true);
+      try {
+        const r = await api.post<{ baris: { masalah: BarisPratinjau['masalah'] }[] }>('/undangan/massal/periksa', { baris: daftar });
+        setDaftar((d) => d && d.length === r.baris.length ? d.map((b, i) => ({ ...b, masalah: r.baris[i].masalah })) : d);
+      } catch { /* abaikan; diperiksa lagi saat dikirim */ } finally { setMemeriksa(false); }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [versi]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ubahBaris = (id: number, k: KolomUndangan, v: string) => { setDaftar((d) => d!.map((b) => (b.id === id ? { ...b, [k]: v, masalah: { ...b.masalah, [k]: undefined } } : b))); setVersi((x) => x + 1); };
+  const hapusBaris = (id: number) => { setDaftar((d) => d!.filter((b) => b.id !== id)); setVersi((x) => x + 1); };
+  const tambahBaris = () => { setDaftar((d) => [...(d ?? []), { id: ++nomorBaris, nama: '', username: '', peran: 'operator', no_wa: '', masalah: {} }]); setCari(''); setHanyaMasalah(false); setHalaman(Math.ceil(((daftar?.length ?? 0) + 1) / PER)); };
+
+  const klien = daftar ? periksaKlien(daftar) : new Map();
+  const masalahDari = (b: BarisPratinjau) => ({ ...b.masalah, ...Object.fromEntries(Object.entries(klien.get(b.id) ?? {}).filter(([, v]) => v)) }) as BarisPratinjau['masalah'];
+  const jumlahMasalah = (daftar ?? []).filter((b) => Object.values(masalahDari(b)).some(Boolean)).length;
+
+  const kirim = useAksi(() => api.post<HasilMassal>('/undangan/massal', { alamat: window.location.origin, baris: daftar!.map(({ nama, username, peran, no_wa }) => ({ nama, username, peran, no_wa })) }), {
+    setelah: (r) => { setHasil(r); segarkan(); },
+    gagal: (e) => {
+      const rows = (e as ApiError).data?.baris as { masalah: BarisPratinjau['masalah'] }[] | undefined;
+      if (rows && daftar && rows.length === daftar.length) { setDaftar(daftar.map((b, i) => ({ ...b, masalah: rows[i].masalah }))); setHanyaMasalah(true); setHalaman(1); }
+    },
+  });
+
   const tautanDari = (t: string) => `${window.location.origin}/?undangan=${t}`;
-  const pesanWa = (nama: string, t: string) => `Halo ${nama}, berikut tautan untuk membuat akun Seemitra Lite (berlaku 72 jam, hanya bisa dipakai sekali):\n${tautanDari(t)}`;
+  const pesanWa = (nama: string, username: string, t: string) => `Halo ${nama}, berikut tautan untuk membuat akun Seemitra Lite dengan username *${username}* (berlaku 72 jam, hanya bisa dipakai sekali):\n${tautanDari(t)}`;
   const unduhDaftar = () => {
     if (!hasil) return;
     const a = document.createElement('a'); a.href = hasil.unduhan; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
@@ -500,42 +555,98 @@ function JendelaUndanganMassal({ buka, tutup }: { buka: boolean; tutup: () => vo
   };
   const tutupAman = async () => {
     if (hasil && !sudahUnduh && !(await konfirmasi({ judul: 'Tutup tanpa mengunduh daftar tautan?', pesan: 'Tautan hanya ditampilkan sekali. Setelah ditutup, tautan tidak bisa dilihat lagi (harus dibuat ulang).', tombol: 'Tutup saja', bahaya: true }))) return;
+    if (!hasil && daftar?.length && !(await konfirmasi({ judul: 'Batalkan undangan massal?', pesan: 'Perubahan pada pratinjau akan hilang. Belum ada tautan yang dibuat.', tombol: 'Batalkan', bahaya: true }))) return;
     tutup();
   };
-  const PER = 8;
-  const tampil = hasil?.daftar.slice((halaman - 1) * PER, halaman * PER) ?? [];
+
+  const PER = hasil ? 8 : 10;
+  const tersaring = (daftar ?? []).filter((b) => (!hanyaMasalah || Object.values(masalahDari(b)).some(Boolean))
+    && (!cari || `${b.nama} ${b.username}`.toLowerCase().includes(cari.toLowerCase())));
+  const tampilPratinjau = tersaring.slice((halaman - 1) * PER, halaman * PER);
+  const tampilHasil = hasil?.daftar.slice((halaman - 1) * PER, halaman * PER) ?? [];
+  const isian = (b: BarisPratinjau, k: KolomUndangan, ph: string, m?: string, extra?: string) => (
+    <div className="min-w-0">
+      <Masukan value={b[k]} placeholder={ph} onChange={(e) => ubahBaris(b.id, k, e.target.value)} aria-invalid={!!m}
+        className={cx('h-9 px-2.5 text-sm', m && 'border-rose-300 bg-rose-50/40', extra)} />
+      {m && <p className="mt-0.5 text-[11px] leading-tight text-rose-600">{m}</p>}
+    </div>
+  );
+
   return (
-    <Jendela buka={buka} tutup={tutupAman} lebar="max-w-3xl" judul={hasil ? `${hasil.jumlah} tautan undangan siap` : 'Undang banyak pegawai sekaligus'}
+    <Jendela buka={buka} tutup={tutupAman} lebar={daftar && !hasil ? 'max-w-5xl' : 'max-w-3xl'}
+      judul={hasil ? `${hasil.jumlah} tautan undangan siap` : daftar ? `Pratinjau ${daftar.length} pegawai` : 'Undang banyak pegawai sekaligus'}
+      sub={daftar && !hasil ? 'Periksa dan perbaiki langsung di sini. Belum ada yang disimpan sampai Anda menekan "Buat tautan".' : undefined}
       kaki={hasil
         ? <><Tombol varian="kedua" ikon={<Download className="size-4" />} onClick={unduhDaftar}>Unduh daftar tautan (Excel)</Tombol><Tombol onClick={tutupAman}>Selesai</Tombol></>
-        : <><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol disabled={!file} memuat={unggah.isPending} ikon={<Upload className="size-4" />} onClick={() => unggah.mutate(undefined)}>Buat tautan</Tombol></>}>
-      {!hasil ? (
-        <div className="space-y-4">
-          <ol className="space-y-1.5 text-sm text-stone-600">
-            <li>1. Unduh <button type="button" onClick={() => unduhFile('/undangan/contoh').catch((e) => beritahu('galat', (e as Error).message))} className="font-semibold text-brand-700 hover:underline">file contoh</button>, isi kolom <b>Nama</b>, <b>Peran</b> (<i>operator</i>, <i>pengamat</i>, atau <i>admin</i>; kosong = operator), dan <b>No WA</b> (opsional).</li>
-            <li>2. Unggah file di bawah (Excel .xlsx atau CSV, maksimal 200 nama).</li>
-            <li>3. Kirim tautan ke masing-masing orang lewat WhatsApp, atau unduh daftar tautannya.</li>
-          </ol>
-          <AreaUnggah terima=".xlsx,.csv" file={file} pilih={setFile} teks="Pilih file daftar pegawai" />
-        </div>
-      ) : (
+        : daftar
+          ? <>
+              <Tombol varian="hantu" onClick={() => { setDaftar(null); setFile(null); }}>Ganti file</Tombol>
+              <Tombol disabled={!daftar.length || jumlahMasalah > 0 || memeriksa} memuat={kirim.isPending} ikon={<Link2 className="size-4" />} onClick={() => kirim.mutate(undefined)}>
+                {jumlahMasalah > 0 ? `Perbaiki ${jumlahMasalah} baris dulu` : memeriksa ? 'Memeriksa…' : `Buat ${daftar.length} tautan`}
+              </Tombol>
+            </>
+          : <><Tombol varian="kedua" onClick={tutup}>Batal</Tombol><Tombol disabled={!file} memuat={pratinjau.isPending} ikon={<Upload className="size-4" />} onClick={() => pratinjau.mutate(undefined)}>Lihat pratinjau</Tombol></>}>
+      {hasil ? (
         <div className="space-y-4">
           <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">Tautan hanya ditampilkan <b>sekali ini</b> dan berlaku sampai <b>{hasil.kedaluwarsa}</b>. Kirim sekarang atau <b>unduh daftar tautan</b> untuk disimpan sementara (rahasiakan — siapa pun yang memegang tautan bisa membuat akun).</p>
           <ul className="divide-y divide-stone-100 rounded-2xl border border-stone-200">
-            {tampil.map((d) => (
+            {tampilHasil.map((d) => (
               <li key={d.token} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-semibold text-stone-800">{d.nama}</div>
-                  <div className="text-xs text-stone-400">{d.peran}{d.no_wa ? ` · +${d.no_wa}` : ''}</div>
+                  <div className="text-xs text-stone-400"><span className="font-mono">{d.username}</span> · {d.peran}{d.no_wa ? ` · +${d.no_wa}` : ''}</div>
                 </div>
                 <Tombol kecil varian="hantu" ikon={<Copy className="size-3.5" />} onClick={() => salin(tautanDari(d.token))}>Salin</Tombol>
-                <a href={`https://wa.me/${d.no_wa ?? ''}?text=${encodeURIComponent(pesanWa(d.nama, d.token))}`} target="_blank" rel="noreferrer">
+                <a href={`https://wa.me/${d.no_wa ?? ''}?text=${encodeURIComponent(pesanWa(d.nama, d.username, d.token))}`} target="_blank" rel="noreferrer">
                   <Tombol kecil varian="kedua" ikon={<MessageCircle className="size-3.5" />}>WhatsApp</Tombol>
                 </a>
               </li>
             ))}
           </ul>
           <Paginasi halaman={halaman} total={hasil.daftar.length} perHalaman={PER} ubah={setHalaman} />
+        </div>
+      ) : daftar ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-48 flex-1"><Masukan value={cari} onChange={(e) => { setCari(e.target.value); setHalaman(1); }} placeholder="Cari nama atau username…" className="h-9 text-sm" /></div>
+            <button type="button" onClick={() => { setHanyaMasalah(!hanyaMasalah); setHalaman(1); }}
+              className={cx('rounded-full px-3 py-1.5 text-xs font-semibold transition-colors', jumlahMasalah ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700', hanyaMasalah && 'ring-2 ring-rose-300')}
+              disabled={!jumlahMasalah && !hanyaMasalah}>
+              {jumlahMasalah ? `${jumlahMasalah} baris bermasalah${hanyaMasalah ? ' (ditampilkan)' : ' — tampilkan'}` : '✓ Semua baris siap'}
+            </button>
+            <Tombol kecil varian="kedua" ikon={<Plus className="size-3.5" />} onClick={tambahBaris}>Tambah baris</Tombol>
+          </div>
+          <div className="hidden grid-cols-[1.5fr_1.1fr_0.9fr_1fr_2rem] gap-2 px-1 text-[11px] font-bold uppercase tracking-wide text-stone-400 md:grid">
+            <span>Nama</span><span>Username</span><span>Peran</span><span>No WA</span><span />
+          </div>
+          <ul className="space-y-2">
+            {tampilPratinjau.map((b) => {
+              const m = masalahDari(b);
+              return (
+                <li key={b.id} className={cx('grid grid-cols-2 items-start gap-2 rounded-xl p-2 md:grid-cols-[1.5fr_1.1fr_0.9fr_1fr_2rem] md:p-1', Object.values(m).some(Boolean) ? 'bg-rose-50/50' : 'bg-stone-50/60 md:bg-transparent')}>
+                  <div className="col-span-2 md:col-span-1">{isian(b, 'nama', 'Nama lengkap', m.nama)}</div>
+                  {isian(b, 'username', 'username', m.username, 'font-mono')}
+                  <div className="min-w-0">
+                    <Pilihan nilai={b.peran} ubah={(v) => ubahBaris(b.id, 'peran', v)} opsi={[{ nilai: 'operator', label: 'Operator' }, { nilai: 'pengamat', label: 'Pengamat' }, { nilai: 'admin', label: 'Admin' }]} />
+                    {m.peran && <p className="mt-0.5 text-[11px] text-rose-600">{m.peran}</p>}
+                  </div>
+                  {isian(b, 'no_wa', 'opsional', m.no_wa)}
+                  <div className="flex justify-end md:pt-1"><TombolIkon label="Hapus baris" onClick={() => hapusBaris(b.id)}><Trash2 className="size-4" /></TombolIkon></div>
+                </li>
+              );
+            })}
+            {!tampilPratinjau.length && <li className="py-6 text-center text-sm text-stone-400">Tidak ada baris yang cocok.</li>}
+          </ul>
+          <Paginasi halaman={halaman} total={tersaring.length} perHalaman={PER} ubah={setHalaman} />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <ol className="space-y-1.5 text-sm text-stone-600">
+            <li>1. Unduh <button type="button" onClick={() => unduhFile('/undangan/contoh').catch((e) => beritahu('galat', (e as Error).message))} className="font-semibold text-brand-700 hover:underline">file contoh</button>, isi kolom <b>Nama</b>, <b>Username</b> (untuk masuk; kosong = dibuatkan otomatis dari nama), <b>Peran</b> (<i>operator</i>, <i>pengamat</i>, atau <i>admin</i>; kosong = operator), dan <b>No WA</b> (opsional).</li>
+            <li>2. Unggah file (Excel .xlsx atau CSV, maksimal 200 nama), lalu periksa & perbaiki di layar pratinjau.</li>
+            <li>3. Kirim tautan ke masing-masing orang lewat WhatsApp, atau unduh daftar tautannya.</li>
+          </ol>
+          <AreaUnggah terima=".xlsx,.csv" file={file} pilih={setFile} teks="Pilih file daftar pegawai" />
         </div>
       )}
     </Jendela>

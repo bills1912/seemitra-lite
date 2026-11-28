@@ -20,11 +20,11 @@ const tokenUndangan = new URLSearchParams(window.location.search).get('undangan'
 
 export function Masuk({ setup }: { setup: boolean }) {
   const [mode, setMode] = useState<Mode>(tokenUndangan ? 'daftar' : 'masuk');
-  const [undangan, setUndangan] = useState<{ sah: boolean; peran?: string; untuk?: string | null } | null>(null);
+  const [undangan, setUndangan] = useState<{ sah: boolean; peran?: string; untuk?: string | null; username?: string | null } | null>(null);
   useEffect(() => {
     if (!tokenUndangan) return;
-    api.get<{ sah: boolean; peran?: string; untuk?: string | null }>(`/auth/undangan/${encodeURIComponent(tokenUndangan)}`)
-      .then((u) => { setUndangan(u); if (!u.sah) setMode('masuk'); if (u.untuk) setF((x) => ({ ...x, nama: x.nama || (u.untuk ?? '') })); })
+    api.get<{ sah: boolean; peran?: string; untuk?: string | null; username?: string | null }>(`/auth/undangan/${encodeURIComponent(tokenUndangan)}`)
+      .then((u) => { setUndangan(u); if (!u.sah) setMode('masuk'); if (u.sah) setF((x) => ({ ...x, nama: x.nama || (u.untuk ?? ''), username: u.username || x.username })); })
       .catch(() => { setUndangan({ sah: false }); setMode('masuk'); });
   }, []);
   const [f, setF] = useState({ nama: '', username: '', sandi: '', ulang: '', kode: '' });
@@ -37,6 +37,7 @@ export function Masuk({ setup }: { setup: boolean }) {
   const kunciSitus = saya?.turnstile ?? null;
   const perluKode = Boolean(saya?.perluKodeSetup);
   // pendaftaran umum ditutup (bawaan): tombol daftar hanya muncul bila ada undangan sah / aplikasi masih kosong
+  const usernameTetap = mode === 'daftar' && Boolean(undangan?.sah && undangan.username);
   const bolehDaftar = setup || Boolean(saya?.pendaftaranTerbuka) || Boolean(undangan?.sah);
   const [token, setToken] = useState('');
   // verifikasi 2 langkah: setelah sandi benar, server memberi tiket 5 menit lalu meminta kode 6 angka
@@ -153,8 +154,9 @@ export function Masuk({ setup }: { setup: boolean }) {
                 </Kolom>
               )}
               {mode !== 'kode' && <>
-              <Kolom label="Username" wajib petunjuk={mode === 'daftar' ? 'Huruf/angka tanpa spasi, mis. bill.z' : undefined}>
-                <Masukan autoFocus={mode === 'masuk'} autoComplete="username" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} />
+              <Kolom label="Username" wajib petunjuk={mode === 'daftar' ? (usernameTetap ? 'Ditentukan oleh admin dalam undangan. Ingat username ini untuk masuk.' : 'Huruf/angka tanpa spasi, mis. bill.z') : undefined}>
+                <Masukan autoFocus={mode === 'masuk'} autoComplete="username" value={f.username} readOnly={usernameTetap}
+                  onChange={(e) => setF({ ...f, username: e.target.value })} className={usernameTetap ? 'bg-stone-100 font-mono text-stone-700' : undefined} />
               </Kolom>
               {kolomSandi('sandi', 'Kata sandi', mode === 'daftar' ? `Minimal ${setup || undangan?.peran === 'admin' ? 10 : 6} karakter, jangan kata umum seperti "12345678". Contoh mudah diingat: kopi-pagi-gunungtua` : undefined)}
               {mode === 'daftar' && kolomSandi('ulang', 'Ulangi kata sandi')}

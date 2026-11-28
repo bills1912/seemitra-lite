@@ -9,7 +9,7 @@ export const useSaya = () =>
 export const usePengaturan = () => useQuery({ queryKey: ['pengaturan'], queryFn: () => api.get<Pengaturan>('/pengaturan'), staleTime: 60_000 });
 
 /** Membungkus aksi simpan/hapus: tampilkan pesan sukses/gagal lalu segarkan data. */
-export function useAksi<A, R = unknown>(fn: (a: A) => Promise<R>, opsi?: { sukses?: string | ((r: R, a: A) => string); setelah?: (r: R, a: A) => void }) {
+export function useAksi<A, R = unknown>(fn: (a: A) => Promise<R>, opsi?: { sukses?: string | ((r: R, a: A) => string); setelah?: (r: R, a: A) => void; gagal?: (e: unknown) => void }) {
   const { beritahu } = useUmpan();
   return useMutation({
     mutationFn: fn,
@@ -19,6 +19,6 @@ export function useAksi<A, R = unknown>(fn: (a: A) => Promise<R>, opsi?: { sukse
       if (s) beritahu('sukses', s);
       opsi?.setelah?.(r, a);
     },
-    onError: (e) => beritahu('galat', (e as Error).message),
+    onError: (e) => { beritahu('galat', (e as Error).message); opsi?.gagal?.(e); },
   });
 }

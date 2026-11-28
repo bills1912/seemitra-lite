@@ -150,72 +150,135 @@ sistem.post('/pengguna/:id/setujui', wajibAdmin, (c) => {
 export const MASA_UNDANGAN_JAM = 72;
 export const hashToken = (t: string) => crypto.createHash('sha256').update(t).digest('hex');
 sistem.get('/undangan', wajibAdmin, (c) => c.json(db.prepare(
-  "SELECT id, peran, untuk, dibuat_oleh, dibuat, kedaluwarsa FROM undangan WHERE dipakai IS NULL AND kedaluwarsa > datetime('now','localtime') ORDER BY id DESC",
+  "SELECT id, peran, untuk, username, dibuat_oleh, dibuat, kedaluwarsa FROM undangan WHERE dipakai IS NULL AND kedaluwarsa > datetime('now','localtime') ORDER BY id DESC",
 ).all()));
 sistem.post('/undangan', wajibAdmin, async (c) => {
   const b = await c.req.json();
   const peran = peranDari(b.peran);
   const untuk = typeof b.untuk === 'string' ? b.untuk.trim().slice(0, 100) || null : null;
+  const username = typeof b.username === 'string' ? b.username.trim() : '';
+  if (username) {
+    const masalah = periksaUsername(username, new Set());
+    if (masalah) throw new GagalError(masalah);
+  }
   const aktif = (db.prepare("SELECT COUNT(*) n FROM undangan WHERE dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get() as { n: number }).n;
   if (aktif >= BATAS_UNDANGAN_AKTIF) throw new GagalError('Terlalu banyak undangan aktif. Batalkan undangan yang tidak dipakai terlebih dahulu.');
   const token = crypto.randomBytes(32).toString('base64url');
-  db.prepare(`INSERT INTO undangan (hash_token, peran, untuk, dibuat_oleh, kedaluwarsa) VALUES (?, ?, ?, ?, datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours'))`)
-    .run(hashToken(token), peran, untuk, c.get('pengguna').nama);
-  catat(c.get('pengguna').nama, 'Buat undangan pendaftaran', `${peran}${untuk ? ` untuk ${untuk}` : ''}`);
+  db.prepare(`INSERT INTO undangan (hash_token, peran, untuk, username, dibuat_oleh, kedaluwarsa) VALUES (?, ?, ?, ?, ?, datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours'))`)
+    .run(hashToken(token), peran, untuk, username || null, c.get('pengguna').nama);
+  catat(c.get('pengguna').nama, 'Buat undangan pendaftaran', `${peran}${untuk ? ` untuk ${untuk}` : ''}${username ? ` (${username})` : ''}`);
   return c.json({ token, jam: MASA_UNDANGAN_JAM });
 });
-/* ---------- Undangan massal: unggah daftar pegawai (Excel/CSV) ---------- */
+/* ---------- Undangan massal: unggah daftar pegawai (Excel/CSV) ----------
+ * Alur: unggah file → PRATINJAU (server hanya membaca & memeriksa, tidak menyimpan apa pun)
+ *       → admin memperbaiki di layar → kirim → tautan dibuat. */
 const BATAS_UNDANGAN_AKTIF = 500;
 const MAKS_UNDANGAN_SEKALI = 200;
+const POLA_USERNAME = /^[A-Za-z0-9._-]{3,30}$/;
 const PETA_UNDANGAN: Record<string, string[]> = {
   nama: ['nama', 'nama pegawai', 'nama lengkap'],
+  username: ['username', 'nama pengguna', 'user', 'akun'],
   peran: ['peran', 'role', 'hak akses'],
   no_wa: ['no wa', 'no whatsapp', 'whatsapp', 'no hp', 'nomor hp', 'hp', 'telepon'],
 };
+type BarisUndangan = { nama: string; username: string; peran: string; no_wa: string };
 /** Nomor HP Indonesia → format internasional untuk tautan WhatsApp (0812… → 62812…) */
 const nomorWa = (v: unknown) => {
   const d = String(v ?? '').replace(/\D/g, '');
+  if (!d) return '';
   if (d.length < 9 || d.length > 15) return null;
   return d.startsWith('0') ? '62' + d.slice(1) : d.startsWith('8') ? '62' + d : d;
 };
+/** Masalah pada username (null bila boleh dipakai). `dipakai` = username lain di daftar yang sama. */
+function periksaUsername(u: string, dipakai: Set<string>): string | null {
+  if (!u) return 'Username wajib diisi.';
+  if (!POLA_USERNAME.test(u)) return 'Username 3–30 karakter: huruf, angka, titik, garis bawah, atau strip (tanpa spasi).';
+  const k = u.toLowerCase();
+  if (dipakai.has(k)) return 'Username ganda di daftar ini.';
+  if (db.prepare('SELECT 1 FROM pengguna WHERE username = ? COLLATE NOCASE').get(u)) return 'Username sudah dipakai akun lain.';
+  if (db.prepare("SELECT 1 FROM undangan WHERE username = ? COLLATE NOCASE AND dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get(u)) return 'Username sudah dipesan undangan lain yang masih berlaku.';
+  return null;
+}
+/** Usulan username dari nama: "Siti Aisyah Harahap" → "siti.harahap" (dibuat unik). */
+function usulanUsername(nama: string, dipakai: Set<string>) {
+  const kata = nama.normalize('NFKD').replace(/[^\w\s]/g, ' ').toLowerCase().split(/\s+/).filter((w) => w && !/^(s|h|dr|ir|drs|se|st|ssi|sst|mm|msi|amd|skom|spd)$/.test(w));
+  let dasar = (kata.length > 1 ? `${kata[0]}.${kata[kata.length - 1]}` : kata[0] ?? 'pegawai').replace(/_/g, '').slice(0, 26);
+  if (dasar.length < 3) dasar = (dasar + 'pegawai').slice(0, 8);
+  let u = dasar, n = 2;
+  while (periksaUsername(u, dipakai)) { u = `${dasar}${n++}`; if (n > 999) break; }
+  return u;
+}
+/** Memeriksa setiap baris; mengembalikan baris yang sudah dirapikan + daftar masalah per baris. */
+function periksaDaftar(input: unknown, usulkan: boolean) {
+  if (!Array.isArray(input)) throw new GagalError('Data daftar tidak valid.');
+  if (input.length > MAKS_UNDANGAN_SEKALI) throw new GagalError(`Maksimal ${MAKS_UNDANGAN_SEKALI} nama sekaligus. Bagi menjadi beberapa bagian.`);
+  const dipakai = new Set<string>();
+  return input.map((r) => {
+    const x = (r ?? {}) as Record<string, unknown>;
+    const nama = String(x.nama ?? '').trim().slice(0, 100);
+    let username = String(x.username ?? '').trim();
+    const peranMentah = String(x.peran ?? '').trim().toLowerCase();
+    const peran = peranMentah === '' ? 'operator' : peranMentah;
+    const wa = nomorWa(x.no_wa);
+    const masalah: Partial<Record<keyof BarisUndangan, string>> = {};
+    if (!nama) masalah.nama = 'Nama wajib diisi.';
+    if (!username && usulkan && nama) username = usulanUsername(nama, dipakai);
+    const mU = periksaUsername(username, dipakai);
+    if (mU) masalah.username = mU;
+    if (username) dipakai.add(username.toLowerCase());
+    if (!['operator', 'pengamat', 'admin'].includes(peran)) masalah.peran = 'Peran harus operator, pengamat, atau admin.';
+    if (wa === null) masalah.no_wa = 'Nomor WA tidak valid.';
+    return { nama, username, peran, no_wa: wa ?? String(x.no_wa ?? ''), masalah };
+  });
+}
+
 sistem.get('/undangan/contoh', wajibAdmin, async (c) => {
   const buf = await buatExcel('Pegawai', [
-    { judul: 'Nama', kunci: 'nama', lebar: 30 }, { judul: 'Peran', kunci: 'peran', lebar: 14 }, { judul: 'No WA', kunci: 'no_wa', lebar: 18 },
+    { judul: 'Nama', kunci: 'nama', lebar: 30 }, { judul: 'Username', kunci: 'username', lebar: 18 },
+    { judul: 'Peran', kunci: 'peran', lebar: 14 }, { judul: 'No WA', kunci: 'no_wa', lebar: 18 },
   ], [
-    { nama: 'Contoh Nama Pegawai', peran: 'operator', no_wa: '081234567890' },
-    { nama: 'Contoh Pimpinan', peran: 'pengamat', no_wa: '' },
+    { nama: 'Contoh Nama Pegawai', username: 'contoh.pegawai', peran: 'operator', no_wa: '081234567890' },
+    { nama: 'Contoh Pimpinan', username: '', peran: 'pengamat', no_wa: '' },
   ]);
   return unduh(c, buf, 'Contoh Undangan Pegawai.xlsx');
 });
-sistem.post('/undangan/massal', wajibAdmin, async (c) => {
+/** Langkah 1: baca file → pratinjau (tidak ada yang disimpan). Username kosong diisi usulan dari nama. */
+sistem.post('/undangan/massal/pratinjau', wajibAdmin, async (c) => {
   const body = await c.req.parseBody();
   const file = body.file as File | undefined;
   if (!file || typeof file === 'string') throw new GagalError('Pilih file Excel (.xlsx) atau CSV daftar pegawai.');
-  const alamat = typeof body.alamat === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(body.alamat) ? body.alamat : '';
-  const baris = (await bacaExcel(await file.arrayBuffer(), PETA_UNDANGAN, file.name))
-    .map((r) => ({ nama: String(r.nama ?? '').trim().slice(0, 100), peran: String(r.peran ?? '').trim().toLowerCase(), no_wa: nomorWa(r.no_wa) }))
-    .filter((r) => r.nama && !/^contoh /i.test(r.nama));
-  if (!baris.length) throw new GagalError('Tidak ada nama yang terbaca. Pastikan ada kolom "Nama" (lihat file contoh).');
-  if (baris.length > MAKS_UNDANGAN_SEKALI) throw new GagalError(`Maksimal ${MAKS_UNDANGAN_SEKALI} nama per unggahan. Bagi file menjadi beberapa bagian.`);
+  const mentah = (await bacaExcel(await file.arrayBuffer(), PETA_UNDANGAN, file.name)).filter((r) => !/^contoh /i.test(String(r.nama ?? '').trim()) && Object.values(r).some((v) => String(v ?? '').trim()));
+  if (!mentah.length) throw new GagalError('Tidak ada nama yang terbaca. Pastikan ada kolom "Nama" (lihat file contoh).');
+  return c.json({ baris: periksaDaftar(mentah, true) });
+});
+/** Memeriksa ulang daftar setelah diedit di layar. */
+sistem.post('/undangan/massal/periksa', wajibAdmin, async (c) => c.json({ baris: periksaDaftar((await c.req.json()).baris, false) }));
+/** Langkah 2: buat tautan untuk daftar yang sudah lolos pemeriksaan. */
+sistem.post('/undangan/massal', wajibAdmin, async (c) => {
+  const b = await c.req.json();
+  const alamat = typeof b.alamat === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(b.alamat) ? b.alamat : '';
+  const baris = periksaDaftar(b.baris, false);
+  if (!baris.length) throw new GagalError('Daftar masih kosong.');
+  const bermasalah = baris.filter((r) => Object.keys(r.masalah).length).length;
+  if (bermasalah) return c.json({ pesan: `${bermasalah} baris masih bermasalah. Perbaiki baris yang ditandai merah.`, baris }, 400);
   const aktif = (db.prepare("SELECT COUNT(*) n FROM undangan WHERE dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get() as { n: number }).n;
   if (aktif + baris.length > BATAS_UNDANGAN_AKTIF) throw new GagalError(`Undangan aktif akan melebihi ${BATAS_UNDANGAN_AKTIF}. Batalkan undangan lama yang tidak dipakai terlebih dahulu.`);
   const oleh = c.get('pengguna').nama;
   const hasil = transaksi(() => {
-    const st = db.prepare(`INSERT INTO undangan (hash_token, peran, untuk, dibuat_oleh, kedaluwarsa) VALUES (?, ?, ?, ?, datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours'))`);
+    const st = db.prepare(`INSERT INTO undangan (hash_token, peran, untuk, username, dibuat_oleh, kedaluwarsa) VALUES (?, ?, ?, ?, ?, datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours'))`);
     return baris.map((r) => {
-      const peran = peranDari(r.peran === 'admin' || r.peran === 'pengamat' ? r.peran : 'operator');
       const token = crypto.randomBytes(32).toString('base64url');
-      st.run(hashToken(token), peran, r.nama, oleh);
-      return { nama: r.nama, peran, no_wa: r.no_wa, token };
+      st.run(hashToken(token), r.peran, r.nama, r.username, oleh);
+      return { nama: r.nama, username: r.username, peran: r.peran, no_wa: r.no_wa || null, token };
     });
   });
   const kedaluwarsa = (db.prepare(`SELECT datetime('now','localtime', '+${MASA_UNDANGAN_JAM} hours') k`).get() as { k: string }).k;
   // file Excel berisi tautan — hanya bisa diunduh sekali ini (token asli tidak disimpan di server)
   const buf = await buatExcel('Tautan undangan', [
-    { judul: 'Nama', kunci: 'nama', lebar: 30 }, { judul: 'Peran', kunci: 'peran', lebar: 12 }, { judul: 'No WA', kunci: 'no_wa', lebar: 16 },
-    { judul: 'Tautan undangan (sekali pakai)', kunci: 'tautan', lebar: 90 }, { judul: 'Berlaku sampai', kunci: 'sampai', lebar: 20 },
+    { judul: 'Nama', kunci: 'nama', lebar: 30 }, { judul: 'Username', kunci: 'username', lebar: 18 }, { judul: 'Peran', kunci: 'peran', lebar: 12 },
+    { judul: 'No WA', kunci: 'no_wa', lebar: 16 }, { judul: 'Tautan undangan (sekali pakai)', kunci: 'tautan', lebar: 90 }, { judul: 'Berlaku sampai', kunci: 'sampai', lebar: 20 },
   ], hasil.map((h) => ({ ...h, tautan: `${alamat}/?undangan=${h.token}`, sampai: kedaluwarsa })), `Tautan undangan Seemitra Lite — berlaku ${MASA_UNDANGAN_JAM} jam, rahasiakan`);
-  catat(oleh, 'Buat undangan massal', `${hasil.length} undangan (${file.name})`);
+  catat(oleh, 'Buat undangan massal', `${hasil.length} undangan`);
   return c.json({ jumlah: hasil.length, kedaluwarsa, daftar: hasil, unduhan: siapkanUnduhan(c, buf, `Tautan Undangan ${new Date().toISOString().slice(0, 10)}.xlsx`) });
 });
 /** Membatalkan semua undangan yang belum dipakai sekaligus */

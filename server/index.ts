@@ -119,9 +119,9 @@ app.get('/api/auth/saya', (c) => {
   });
 });
 
-type Undangan = { id: number; peran: string; untuk: string | null };
+type Undangan = { id: number; peran: string; untuk: string | null; username: string | null };
 const cariUndangan = (token: unknown) => (typeof token === 'string' && token.length >= 20 && token.length <= 100
-  ? db.prepare("SELECT id, peran, untuk FROM undangan WHERE hash_token = ? AND dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get(hashToken(token)) as Undangan | undefined
+  ? db.prepare("SELECT id, peran, untuk, username FROM undangan WHERE hash_token = ? AND dipakai IS NULL AND kedaluwarsa > datetime('now','localtime')").get(hashToken(token)) as Undangan | undefined
   : undefined);
 
 /** Memeriksa tautan undangan (dipakai halaman daftar untuk menampilkan "Anda diundang sebagai …"). */
@@ -130,7 +130,7 @@ app.get('/api/auth/undangan/:token', (c) => {
   if (cekUndanganPerIp.penuh(ip)) throw new GagalError(PESAN_TERLALU_BANYAK, 429);
   const u = cariUndangan(c.req.param('token'));
   if (!u) cekUndanganPerIp.tambah(ip);
-  return c.json(u ? { sah: true, peran: u.peran, untuk: u.untuk } : { sah: false });
+  return c.json(u ? { sah: true, peran: u.peran, untuk: u.untuk, username: u.username } : { sah: false });
 });
 
 /**
@@ -152,6 +152,8 @@ app.post('/api/auth/daftar', async (c) => {
   if (!/^[A-Za-z0-9._-]{3,30}$/.test(username)) throw new GagalError('Username 3–30 karakter, hanya huruf, angka, titik, garis bawah, atau strip.');
   const pertama = jumlahPengguna() === 0;
   const undangan = pertama ? undefined : cariUndangan(body.undangan);
+  // undangan yang sudah menetapkan username: pendaftar wajib memakai username itu
+  if (undangan?.username && undangan.username.toLowerCase() !== username.toLowerCase()) throw new GagalError(`Gunakan username dari undangan: ${undangan.username}`);
   cekSandiBaru(sandi, username, pertama ? 'admin' : undangan?.peran ?? 'operator');
   if (!pertama && !undangan) {
     if (body.undangan) { daftarPerIp.tambah(ip); throw new GagalError('Tautan undangan tidak berlaku (sudah dipakai, dibatalkan, atau lewat 72 jam). Minta tautan baru kepada admin.', 403); }

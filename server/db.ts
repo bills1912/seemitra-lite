@@ -161,6 +161,9 @@ const MIGRASI: string[] = [
   CREATE TRIGGER riwayat_tanpa_ubah BEFORE UPDATE ON riwayat WHEN OLD.hash IS NOT NULL
     BEGIN SELECT RAISE(ABORT, 'Riwayat aktivitas tidak boleh diubah.'); END;
   `,
+  /* 9 — undangan bisa menetapkan username (pendaftar tidak bisa menggantinya) */ `
+  ALTER TABLE undangan ADD COLUMN username TEXT;
+  `,
 ];
 
 function jalankanMigrasi() {
