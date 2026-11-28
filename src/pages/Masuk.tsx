@@ -6,6 +6,7 @@ import { Kolom, Masukan, Tombol, cx } from '../components/ui';
 import { Turnstile, type PeganganTurnstile } from '../components/Turnstile';
 import { Kredit } from '../components/Kredit';
 import { IlustrasiMasuk } from '../components/IlustrasiMasuk';
+import { LatarMengambang } from '../components/LatarMengambang';
 import { useSaya } from '../lib/hooks';
 
 type Mode = 'masuk' | 'daftar' | 'terkirim' | 'kode';
@@ -99,6 +100,7 @@ export function Masuk({ setup }: { setup: boolean }) {
     <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-4 py-8 sm:py-10">
       <motion.div className="absolute -left-32 -top-32 size-[28rem] rounded-full bg-brand-200/50 blur-3xl" animate={{ x: [0, 60, 0], y: [0, 40, 0] }} transition={{ duration: 16, repeat: Infinity }} />
       <motion.div className="absolute -bottom-40 -right-20 size-[30rem] rounded-full bg-amber-200/40 blur-3xl" animate={{ x: [0, -50, 0], y: [0, -30, 0] }} transition={{ duration: 18, repeat: Infinity }} />
+      <LatarMengambang />
 
       <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 200, damping: 24 }}
         className="relative grid w-full max-w-md overflow-hidden rounded-[2rem] border border-white/70 bg-white/85 shadow-melayang backdrop-blur-xl lg:max-w-5xl lg:grid-cols-[1.08fr_1fr]">

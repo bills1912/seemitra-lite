@@ -47,3 +47,13 @@ input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }
 }
 .masuk-halaman { animation: masuk-halaman 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 @media (prefers-reduced-motion: reduce) { .masuk-halaman { animation: none; } }
+
+/* Latar halaman masuk: bentuk tembus pandang naik pelan sambil berputar */
+@keyframes naik-gelembung {
+  0% { transform: translateY(15vh) rotate(0deg); opacity: 0; }
+  12% { opacity: 1; }
+  85% { opacity: 0.9; }
+  100% { transform: translateY(-115vh) rotate(320deg); opacity: 0; }
+}
+.gelembung { animation: naik-gelembung linear infinite; will-change: transform, opacity; }
+@media (prefers-reduced-motion: reduce) { .gelembung { animation: none; opacity: 0.6; transform: translateY(-40vh); } }
