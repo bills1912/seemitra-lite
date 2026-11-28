@@ -65,7 +65,6 @@ export function Panduan() {
           </div>
         ))}
       </Kartu>
-      <p className="mt-6 text-center text-xs text-stone-400">Panduan teknis (menjalankan & memperbaiki aplikasi) ada di file PANDUAN.md pada repositori GitHub.</p>
     </div>
   );
 }
