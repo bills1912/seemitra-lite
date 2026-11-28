@@ -22,7 +22,7 @@ function Tip({ label, aktif = true, children }: { label: string; aktif?: boolean
   return (
     <div className="group/tip relative">
       {children}
-      <span role="tooltip" className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-x-1 -translate-y-1/2 whitespace-nowrap rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition duration-150 group-hover/tip:translate-x-0 group-hover/tip:opacity-100 group-focus-within/tip:translate-x-0 group-focus-within/tip:opacity-100">
+      <span role="tooltip" className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-x-1 -translate-y-1/2 whitespace-nowrap rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition duration-150 group-hover/tip:translate-x-0 group-hover/tip:opacity-100 group-has-[:focus-visible]/tip:translate-x-0 group-has-[:focus-visible]/tip:opacity-100">
         {label}
         <span className="absolute -left-1 top-1/2 size-2 -translate-y-1/2 rotate-45 bg-stone-900" />
       </span>
