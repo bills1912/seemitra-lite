@@ -5,6 +5,7 @@ import { api, queryClient } from '../lib/api';
 import { Kolom, Masukan, Tombol, cx } from '../components/ui';
 import { Turnstile, type PeganganTurnstile } from '../components/Turnstile';
 import { Kredit } from '../components/Kredit';
+import { IlustrasiMasuk } from '../components/IlustrasiMasuk';
 import { useSaya } from '../lib/hooks';
 
 type Mode = 'masuk' | 'daftar' | 'terkirim' | 'kode';
@@ -95,18 +96,38 @@ export function Masuk({ setup }: { setup: boolean }) {
   );
 
   return (
-    <div className="relative grid min-h-dvh place-items-center overflow-hidden px-4 py-10">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-4 py-8 sm:py-10">
       <motion.div className="absolute -left-32 -top-32 size-[28rem] rounded-full bg-brand-200/50 blur-3xl" animate={{ x: [0, 60, 0], y: [0, 40, 0] }} transition={{ duration: 16, repeat: Infinity }} />
       <motion.div className="absolute -bottom-40 -right-20 size-[30rem] rounded-full bg-amber-200/40 blur-3xl" animate={{ x: [0, -50, 0], y: [0, -30, 0] }} transition={{ duration: 18, repeat: Infinity }} />
 
-      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 200, damping: 24 }} className="relative w-full max-w-md">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <motion.img src="/logo.svg" className="mb-4 size-16" initial={{ rotate: -20, scale: 0.6 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 14, delay: 0.1 }} />
-          <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">Seemitra <span className="text-brand-600">Lite</span></h1>
-          <p className="mt-1 text-stone-500">Administrasi kegiatan mitra statistik</p>
+      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 200, damping: 24 }}
+        className="relative grid w-full max-w-md overflow-hidden rounded-[2rem] border border-white/70 bg-white/85 shadow-melayang backdrop-blur-xl lg:max-w-5xl lg:grid-cols-[1.08fr_1fr]">
+
+        {/* ---------- Panel grafis (kiri) ---------- */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 px-7 pb-6 pt-7 text-white lg:flex lg:flex-col lg:px-10 lg:pb-10 lg:pt-9">
+          <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-white/10" />
+          <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-20 size-80 rounded-full bg-brand-900/30" />
+          <div className="relative flex items-center gap-3">
+            <motion.img src="/logo.svg" alt="" className="size-11 rounded-2xl bg-white/15 p-1 ring-1 ring-white/25" initial={{ rotate: -20, scale: 0.6 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 14, delay: 0.1 }} />
+            <div>
+              <h1 className="text-xl font-extrabold leading-tight tracking-tight">Seemitra <span className="text-amber-300">Lite</span></h1>
+              <p className="text-xs font-medium text-brand-50/80">Administrasi kegiatan mitra statistik</p>
+            </div>
+          </div>
+          <IlustrasiMasuk className="relative mx-auto mt-4 hidden w-full max-w-md drop-shadow-sm sm:block lg:my-auto lg:max-w-none" />
+          <div className="relative mt-4 hidden lg:block">
+            <p className="text-2xl font-bold leading-snug">Mitra, honor, dan SPK/BAST<br /><span className="text-amber-300">rapi dalam satu tempat.</span></p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+              {['Daftar mitra', 'Batas honor (SBML)', 'Rekap & SPK/BAST'].map((t) => (
+                <span key={t} className="rounded-full bg-white/15 px-3 py-1.5 ring-1 ring-white/20">{t}</span>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="rounded-3xl border border-white/60 bg-white/80 p-7 shadow-melayang backdrop-blur-xl">
+        {/* ---------- Panel formulir (kanan) ---------- */}
+        <div className="flex flex-col justify-center p-7 sm:p-9 lg:p-11">
+        <div>
           {mode === 'terkirim' ? (
             <motion.div key="terkirim" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
               <motion.div initial={{ rotate: -30, scale: 0 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: 'spring', delay: 0.1 }}
@@ -118,8 +139,9 @@ export function Masuk({ setup }: { setup: boolean }) {
           ) : (
             <motion.form key={mode + goyang} initial={goyang ? false : { opacity: 0, x: mode === 'daftar' ? 24 : -24 }} animate={goyang ? { x: [0, -10, 10, -6, 6, 0] } : { opacity: 1, x: 0 }}
               transition={{ duration: goyang ? 0.4 : 0.25 }} onSubmit={kirim} className="space-y-4">
-              <div className="mb-1">
-                <h2 className="text-xl font-bold text-stone-900">{mode === 'masuk' ? 'Masuk' : mode === 'kode' ? 'Verifikasi 2 langkah' : 'Daftar akun baru'}</h2>
+              <div className="mb-3">
+                {mode === 'masuk' && <p className="mb-1 text-sm font-semibold text-brand-600">Selamat datang kembali 👋</p>}
+                <h2 className="text-2xl font-extrabold tracking-tight text-stone-900">{mode === 'masuk' ? 'Masuk ke akun Anda' : mode === 'kode' ? 'Verifikasi 2 langkah' : 'Daftar akun baru'}</h2>
                 <p className="text-sm text-stone-500">{mode === 'masuk' ? 'Gunakan username dan kata sandi Anda.' : mode === 'kode' ? 'Buka aplikasi autentikator di HP Anda, lalu ketik 6 angka untuk Seemitra Lite.' : setup ? 'Akun pertama otomatis menjadi admin.' : undangan?.sah ? 'Akun langsung aktif setelah dibuat.' : 'Akun baru aktif setelah disetujui admin.'}</p>
               </div>
 
@@ -187,9 +209,10 @@ export function Masuk({ setup }: { setup: boolean }) {
             </motion.form>
           )}
         </div>
-        {mode === 'masuk' && <p className="mt-5 text-center text-xs text-stone-400">Lupa kata sandi? Minta admin mengatur ulang dari menu Pengaturan → Pengguna.</p>}
-        <Kredit className="mt-8" />
+        {mode === 'masuk' && <p className="mt-6 text-center text-xs text-stone-400">Lupa kata sandi? Minta admin mengatur ulang dari menu Pengaturan → Pengguna.</p>}
+        </div>
       </motion.div>
+      <Kredit className="relative mt-6" />
     </div>
   );
 }
