@@ -110,7 +110,7 @@ export function Masuk({ setup }: { setup: boolean }) {
           <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-white/10" />
           <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-20 size-80 rounded-full bg-brand-900/30" />
           <div className="relative flex items-center gap-3">
-            <motion.img src="/logo.svg" alt="" className="size-11 rounded-2xl bg-white/15 p-1 ring-1 ring-white/25" initial={{ rotate: -20, scale: 0.6 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 14, delay: 0.1 }} />
+            <motion.img src="/logo.svg" alt="" className="size-12 rounded-[1.1rem] shadow-lg shadow-brand-900/30 ring-2 ring-white/30" initial={{ rotate: -20, scale: 0.6 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 14, delay: 0.1 }} />
             <div>
               <h1 className="text-xl font-extrabold leading-tight tracking-tight">Seemitra <span className="text-amber-300">Lite</span></h1>
               <p className="text-xs font-medium text-brand-50/80">Administrasi kegiatan mitra statistik</p>
