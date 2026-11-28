@@ -1,5 +1,7 @@
 # Catatan untuk asisten AI / pengembang
 
+> **Lisensi:** lihat `LICENSE`. Keterangan pembuat di kaki halaman (`src/components/Kredit.tsx`, dipasang di `Tata.tsx` dan `Masuk.tsx`) **tidak boleh dihapus atau disembunyikan**.
+
 Aplikasi ini dirawat oleh orang **tanpa latar belakang IT**. Saat mengubah kode:
 
 - Pertahankan **Bahasa Indonesia** untuk nama fungsi/variabel, teks tampilan, dan komentar.

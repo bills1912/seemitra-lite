@@ -4,6 +4,7 @@ import { ArrowLeft, Eye, EyeOff, Hourglass, LogIn, MailOpen, Sparkles, UserPlus 
 import { api, queryClient } from '../lib/api';
 import { Kolom, Masukan, Tombol, cx } from '../components/ui';
 import { Turnstile, type PeganganTurnstile } from '../components/Turnstile';
+import { Kredit } from '../components/Kredit';
 import { useSaya } from '../lib/hooks';
 
 type Mode = 'masuk' | 'daftar' | 'terkirim' | 'kode';
@@ -181,6 +182,7 @@ export function Masuk({ setup }: { setup: boolean }) {
           )}
         </div>
         {mode === 'masuk' && <p className="mt-5 text-center text-xs text-stone-400">Lupa kata sandi? Minta admin mengatur ulang dari menu Pengaturan → Pengguna.</p>}
+        <Kredit className="mt-8" />
       </motion.div>
     </div>
   );

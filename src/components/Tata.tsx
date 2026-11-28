@@ -1,4 +1,5 @@
 /** Tata letak utama: menu samping, bilah atas, dan pencarian cepat (Ctrl+K). */
+import { Kredit } from './Kredit';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
@@ -156,13 +157,14 @@ export function Tata({ pengguna, children }: { pengguna: Pengguna; children: Rea
       </AnimatePresence>
 
       <main className="transition-[padding] duration-300 ease-out lg:pl-[var(--lebar-menu)]" style={{ '--lebar-menu': `${ringkas ? LEBAR_RINGKAS : LEBAR_PENUH}px` } as CSSProperties}>
-        <div className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-10 lg:pt-10">
+        <div className="mx-auto flex min-h-dvh max-w-7xl flex-col px-4 pb-24 pt-6 sm:px-6 lg:px-10 lg:pt-10">
           {/* Transisi halaman memakai animasi CSS (lihat .masuk-halaman di index.css):
               selalu selesai walau pengguna berpindah halaman dengan cepat. */}
           {pengguna.peran === 'pengamat' && (
             <div className="mb-5 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-800">Anda masuk sebagai <b>pengamat</b>: bisa melihat data, tetapi tidak bisa mengubah, mengekspor, atau melihat NIK/rekening lengkap.</div>
           )}
-          <div key={lokasi.pathname} className="masuk-halaman">{children}</div>
+          <div key={lokasi.pathname} className="masuk-halaman flex-1">{children}</div>
+          <Kredit className="mt-16 border-t border-stone-200/70 pt-6" />
         </div>
       </main>
 
